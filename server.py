@@ -8,7 +8,9 @@ import os
 
 app = Flask(__name__)
 
-# Load faces directly from the database
+# ✅ Base directory to look for images
+BASE_IMAGE_DIR = "C:/xampp/htdocs/CMS/config"
+
 def load_known_faces_from_db():
     known_encodings = []
     known_names = []
@@ -17,29 +19,37 @@ def load_known_faces_from_db():
         conn = mysql.connector.connect(
             host='localhost',
             user='root',
-            password='',  # update if needed
-            database='test'  # <-- replace with your DB name
+            password='',
+            database='cms'  # ✅ Your updated DB
         )
         cursor = conn.cursor()
-        cursor.execute("SELECT name, image FROM faces")
+        cursor.execute("SELECT fullname, face_image_path FROM students WHERE face_image_path IS NOT NULL")
         results = cursor.fetchall()
 
-        for name, blob in results:
-            img_array = np.frombuffer(blob, np.uint8)
-            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        for name, rel_path in results:
+            full_path = os.path.join(BASE_IMAGE_DIR, rel_path.replace("\\", "/"))
+            
+            if not os.path.exists(full_path):
+                print(f"❌ File not found: {full_path}")
+                continue
+
+            img = cv2.imread(full_path)
+            if img is None:
+                print(f"❌ Could not read image: {full_path}")
+                continue
 
             encodings = face_recognition.face_encodings(img)
             if encodings:
                 known_encodings.append(encodings[0])
                 known_names.append(name)
-                print(f"✅ Loaded from DB: {name}")
+                print(f"✅ Loaded face for: {name}")
             else:
-                print(f"⚠️ No face found for: {name}")
+                print(f"⚠️ No face found in: {full_path}")
 
         cursor.close()
         conn.close()
     except Exception as e:
-        print("❌ DB Error:", str(e))
+        print("❌ Database error:", str(e))
 
     return known_encodings, known_names
 
@@ -57,10 +67,10 @@ def verify_face():
 
         unknown_encodings = face_recognition.face_encodings(frame)
         if not unknown_encodings:
-            return jsonify({'match': False, 'error': 'No face found'})
+            return jsonify({'match': False, 'error': 'No face found in input image'})
 
-        # Load faces from DB
         known_encodings, known_names = load_known_faces_from_db()
+
         threshold = 0.5
         best_match_name = None
         best_distance = float('inf')
@@ -75,7 +85,7 @@ def verify_face():
             confidence = round((1 - best_distance) * 100, 2)
             return jsonify({'match': True, 'name': best_match_name, 'confidence': confidence})
         else:
-            return jsonify({'match': False})
+            return jsonify({'match': False, 'error': 'No match found'})
 
     except Exception as e:
         return jsonify({'match': False, 'error': str(e)})

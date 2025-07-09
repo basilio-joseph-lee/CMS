@@ -81,10 +81,9 @@
 
     <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
 
-    <!-- Buttons -->
+    <!-- Login Button -->
     <div class="mt-6">
       <button onclick="captureAndLogin()" class="cutout-btn bg-green-400 text-white hover:bg-green-500">✅ Login with Face</button>
-      <button id="registerBtn" onclick="registerFace()" style="display:none;" class="cutout-btn bg-red-400 text-white hover:bg-red-500 ml-4">➕ Register Face</button>
     </div>
 
     <!-- Status Note -->
@@ -119,37 +118,15 @@
       .then(data => {
         if (data.success) {
           const confidenceText = data.confidence ? ` (${data.confidence}% match)` : '';
-          status.innerText = `✅ Welcome, ${data.name}!${confidenceText}`;
-          document.getElementById('registerBtn').style.display = 'none';
+          //status.innerText = `✅ Welcome, ${data.name}!${confidenceText}`;
+          status.innerText = `✅ Welcome, ${data.name}!`;
           setTimeout(() => window.location.href = 'dashboard.php', 1000);
         } else {
           status.innerText = "❌ Face not recognized.";
-          document.getElementById('registerBtn').style.display = 'inline-block';
         }
       })
       .catch(err => {
         status.innerText = "🚫 Server error.";
-        console.error(err);
-      });
-    }
-
-    function registerFace() {
-      const imageData = captureImage();
-      const name = prompt("Enter your name to register:");
-      if (!name) return;
-
-      fetch('../config/register_face.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, image: imageData })
-      })
-      .then(response => response.json())
-      .then(data => {
-        alert(data.success ? "✅ Registered!" : "❌ Failed: " + data.error);
-        if (data.success) document.getElementById('registerBtn').style.display = 'none';
-      })
-      .catch(err => {
-        alert("🚫 Registration error.");
         console.error(err);
       });
     }

@@ -134,15 +134,16 @@ $conn->close();
         <!-- Capture Section -->
         <div class="text-center">
           <div class="w-full h-60 bg-blue-100 rounded-xl mb-4 flex items-center justify-center">
-            <p class="text-gray-600">📷 Webcam Preview Here</p>
+            <video id="video" width="320" height="240" autoplay class="rounded"></video>
+            <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
           </div>
-          <button class="bg-orange-400 hover:bg-orange-500 text-white px-6 py-2 rounded-lg font-bold">Capture Face</button>
+          <button type="button" onclick="captureImage()" class="bg-orange-400 hover:bg-orange-500 text-white px-6 py-2 rounded-lg font-bold">Capture Face</button>
         </div>
 
         <!-- Avatar + Form -->
         <div>
           <div class="bg-yellow-100 rounded-xl mb-4 p-4 text-center">
-            <img src="../img/avatar_placeholder.png" alt="Avatar" class="w-24 h-24 mx-auto mb-2">
+            <img id="avatarPreview" src="../img/avatar_placeholder.png" alt="Avatar" class="w-24 h-24 mx-auto mb-2">
             <p class="text-gray-700 font-semibold">Preview of student avatar</p>
           </div>
 
@@ -150,6 +151,8 @@ $conn->close();
             <input type="hidden" name="school_year_id" value="<?= htmlspecialchars($selectedYear) ?>">
             <input type="hidden" name="advisory_id" value="<?= htmlspecialchars($selectedSection) ?>">
             <input type="hidden" name="subject_id" value="<?= htmlspecialchars($selectedSubject) ?>">
+            <input type="hidden" id="captured_face" name="captured_face">
+
             <input type="text" name="fullname" placeholder="Full Name" required class="w-full p-3 border border-yellow-400 rounded-xl">
             <select name="gender" required class="w-full p-3 border border-yellow-400 rounded-xl">
               <option value="">Select gender</option>
@@ -160,6 +163,22 @@ $conn->close();
           </form>
         </div>
       </div>
+      <script>
+        navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+          document.getElementById('video').srcObject = stream;
+        });
+
+        function captureImage() {
+          const video = document.getElementById('video');
+          const canvas = document.getElementById('canvas');
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          const imageData = canvas.toDataURL('image/jpeg');
+          document.getElementById('captured_face').value = imageData;
+          document.getElementById('avatarPreview').src = imageData;
+        }
+      </script>
       <?php endif; ?>
     </div>
   </div>

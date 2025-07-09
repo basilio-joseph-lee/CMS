@@ -11,14 +11,14 @@
     <h1 class="text-3xl font-bold text-gray-800 mb-8">Choose Your Role</h1>
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
       <!-- Student -->
-      <a href="user/index.php" class="bg-blue-500 hover:bg-blue-600 text-white p-6 rounded-lg transition-all shadow-md">
+      <a href="user/face_login.php" class="bg-blue-500 hover:bg-blue-600 text-white p-6 rounded-lg transition-all shadow-md">
         <div class="text-4xl mb-2">🎓</div>
         <h2 class="text-xl font-semibold">Student</h2>
         <p class="text-sm">Login as Student</p>
       </a>
 
       <!-- Teacher -->
-      <a href="teacher_login.php" class="bg-green-500 hover:bg-green-600 text-white p-6 rounded-lg transition-all shadow-md">
+      <a href="user/teacher_login.php" class="bg-green-500 hover:bg-green-600 text-white p-6 rounded-lg transition-all shadow-md">
         <div class="text-4xl mb-2">👩‍🏫</div>
         <h2 class="text-xl font-semibold">Teacher</h2>
         <p class="text-sm">Login as Teacher</p>
