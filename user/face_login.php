@@ -1,3 +1,18 @@
+<?php
+session_start();
+
+// Re-store subject data to ensure it's available even after future redirects
+if (isset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['class_name'], $_SESSION['year_label'])) {
+    $_SESSION['active_subject_id'] = $_SESSION['subject_id'];
+    $_SESSION['active_subject_name'] = $_SESSION['subject_name'];
+    $_SESSION['active_class_name'] = $_SESSION['class_name'];
+    $_SESSION['active_year_label'] = $_SESSION['year_label'];
+} else {
+    die("❗ Subject data missing. Please select subject again.");
+}
+?>
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -68,6 +83,7 @@
   </style>
 </head>
 <body class="flex items-center justify-center min-h-screen px-4 py-10">
+
 
   <div class="p-8 max-w-xl w-full text-center bg-[#2f4733] rounded-[30px] shadow-[8px_10px_0_rgba(0,0,0,0.25)] ring-4 ring-white animated-card">
     

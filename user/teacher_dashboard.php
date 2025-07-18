@@ -5,7 +5,13 @@ if (!isset($_SESSION['teacher_id'])) {
   exit;
 }
 $teacherName = $_SESSION['fullname'];
+
+// Get subject info from session
+$subjectName = $_SESSION['subject_name'] ?? '';
+$className = $_SESSION['class_name'] ?? '';
+$yearLabel = $_SESSION['year_label'] ?? '';
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -56,11 +62,19 @@ $teacherName = $_SESSION['fullname'];
 </head>
 <body class="min-h-screen flex flex-col items-center px-4 py-8">
 
-  <!-- Header -->
-  <div class="w-full max-w-6xl bg-green-700 text-white flex justify-between items-center px-6 py-4 rounded-t-3xl rounded-b-xl shadow-lg mb-10">
-    <h1 class="text-2xl font-bold">Welcome, <?php echo htmlspecialchars($teacherName); ?></h1>
-    <a href="logout.php" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold shadow">Logout</a>
+ <!-- Header -->
+<div class="w-full max-w-6xl bg-green-700 text-white flex justify-between items-center px-6 py-4 rounded-t-3xl rounded-b-xl shadow-lg mb-10">
+  <div>
+    <h1 class="text-2xl font-bold">Welcome, <?= htmlspecialchars($teacherName); ?></h1>
+    <div class="text-sm">
+      Subject: <span class="font-semibold"><?= htmlspecialchars($subjectName) ?></span> |
+      Section: <span class="font-semibold"><?= htmlspecialchars($className) ?></span> |
+      SY: <span class="font-semibold"><?= htmlspecialchars($yearLabel) ?></span>
+    </div>
   </div>
+  <a href="teacher_login.php" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold shadow">Logout</a>
+</div>
+
 
   <!-- Card Grid -->
   <div class="w-full max-w-6xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
@@ -71,8 +85,7 @@ $teacherName = $_SESSION['fullname'];
         <div class="font-bold">Add Student</div>
       </div>
     </a>
-
-    <a href="view_students.php" class="relative pin">
+    <a href="teacher/view_students.php" class="relative pin">
       <div class="card">
         <div class="card-icon">👦</div>
         <div class="font-bold">View Students</div>

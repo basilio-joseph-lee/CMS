@@ -16,6 +16,10 @@ if ($conn->connect_error) {
 // Get form data
 $username = $_POST['username'] ?? '';
 $password = $_POST['password'] ?? '';
+$subject_id = $_POST['subject_id'];
+$subject_name = $_POST['subject_name'];
+$class_name = $_POST['class_name'];
+$year_label = $_POST['year_label'];
 
 // Sanitize and prepare
 $stmt = $conn->prepare("SELECT * FROM teachers WHERE username = ?");
@@ -26,10 +30,27 @@ $result = $stmt->get_result();
 if ($result->num_rows === 1) {
     $teacher = $result->fetch_assoc();
 
-    // For testing: plain text password check (no hash)
+    // For testing: plain text password check (you can replace this with password_verify later)
     if ($password === $teacher['password']) {
         $_SESSION['teacher_id'] = $teacher['teacher_id'];
         $_SESSION['fullname'] = $teacher['fullname'];
+
+        // Save subject selection info
+        $_SESSION['subject_id'] = $subject_id;
+        $_SESSION['subject_name'] = $subject_name;
+        $_SESSION['class_name'] = $class_name;
+        $_SESSION['year_label'] = $year_label;
+
+        // Get advisory_id and school_year_id from the subject
+        $subjQuery = $conn->prepare("SELECT advisory_id, school_year_id FROM subjects WHERE subject_id = ?");
+        $subjQuery->bind_param("i", $subject_id);
+        $subjQuery->execute();
+        $subjResult = $subjQuery->get_result();
+        if ($subj = $subjResult->fetch_assoc()) {
+            $_SESSION['advisory_id'] = $subj['advisory_id'];
+            $_SESSION['school_year_id'] = $subj['school_year_id'];
+        }
+
         header("Location: ../user/teacher_dashboard.php");
         exit;
     }

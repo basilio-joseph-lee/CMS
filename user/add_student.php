@@ -4,52 +4,15 @@ if (!isset($_SESSION['teacher_id'])) {
   header("Location: teacher_login.php");
   exit;
 }
-$teacherId = $_SESSION['teacher_id'];
+
 $teacherName = $_SESSION['fullname'];
+$subject_id = $_SESSION['subject_id'];
+$advisory_id = $_SESSION['advisory_id'];
+$school_year_id = $_SESSION['school_year_id'];
+$subject_name = $_SESSION['subject_name'];
+$class_name = $_SESSION['class_name'];
+$year_label = $_SESSION['year_label'];
 
-$conn = new mysqli("localhost", "root", "", "cms");
-if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
-}
-
-// Fetch school years
-$schoolYears = [];
-$result = $conn->query("SELECT school_year_id, year_label FROM school_years ORDER BY year_label DESC");
-while ($row = $result->fetch_assoc()) {
-  $schoolYears[] = $row;
-}
-
-$selectedYear = $_POST['school_year_id'] ?? '';
-$selectedSection = $_POST['advisory_id'] ?? '';
-$selectedSubject = $_POST['subject_id'] ?? '';
-
-// Fetch advisory classes for selected year
-$advisorySections = [];
-if ($selectedYear) {
-  $stmt = $conn->prepare("SELECT advisory_id, class_name FROM advisory_classes WHERE teacher_id = ? AND school_year_id = ?");
-  $stmt->bind_param("ii", $teacherId, $selectedYear);
-  $stmt->execute();
-  $res = $stmt->get_result();
-  while ($row = $res->fetch_assoc()) {
-    $advisorySections[] = $row;
-  }
-  $stmt->close();
-}
-
-// Fetch subjects for selected year and section
-$subjects = [];
-if ($selectedYear && $selectedSection) {
-  $stmt = $conn->prepare("SELECT subject_id, subject_name FROM subjects WHERE teacher_id = ? AND school_year_id = ? AND advisory_id = ?");
-  $stmt->bind_param("iii", $teacherId, $selectedYear, $selectedSection);
-  $stmt->execute();
-  $res = $stmt->get_result();
-  while ($row = $res->fetch_assoc()) {
-    $subjects[] = $row;
-  }
-  $stmt->close();
-}
-
-$conn->close();
 ?>
 
 <!DOCTYPE html>
@@ -87,7 +50,7 @@ $conn->close();
     <h2 class="text-2xl font-bold mb-6">SMARTCLASS KIOSK</h2>
     <a href="teacher_dashboard.php">Home</a>
     <a href="#" class="bg-yellow-300 text-black">Add Student</a>
-    <a href="view_students.php">View Students</a>
+    <a href="teacher/view_students.php">View Students</a>
   </div>
 
   <!-- Main Content -->
@@ -95,40 +58,9 @@ $conn->close();
     <div class="bg-white shadow-xl rounded-2xl p-6 max-w-5xl mx-auto">
       <div class="flex flex-col md:flex-row items-center justify-between mb-6">
         <h1 class="text-3xl font-bold text-[#bc6c25]">📌 Add Student</h1>
-        <p class="text-lg text-gray-700 font-semibold">Welcome, <?php echo htmlspecialchars($teacherName); ?></p>
+        <p class="text-lg text-gray-700 font-semibold">Welcome, <?= htmlspecialchars($teacherName); ?></p>
       </div>
 
-      <!-- Step 1: School Year Selection -->
-      <form method="POST" class="mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <select name="school_year_id" onchange="this.form.submit()" class="p-3 border border-yellow-400 rounded-xl">
-            <option value="">Select School Year</option>
-            <?php foreach ($schoolYears as $year): ?>
-              <option value="<?= $year['school_year_id'] ?>" <?= $selectedYear == $year['school_year_id'] ? 'selected' : '' ?>><?= htmlspecialchars($year['year_label']) ?></option>
-            <?php endforeach; ?>
-          </select>
-
-          <?php if ($selectedYear): ?>
-          <select name="advisory_id" onchange="this.form.submit()" class="p-3 border border-yellow-400 rounded-xl">
-            <option value="">Select Section</option>
-            <?php foreach ($advisorySections as $section): ?>
-              <option value="<?= $section['advisory_id'] ?>" <?= $selectedSection == $section['advisory_id'] ? 'selected' : '' ?>><?= htmlspecialchars($section['class_name']) ?></option>
-            <?php endforeach; ?>
-          </select>
-          <?php endif; ?>
-
-          <?php if ($selectedSection): ?>
-          <select name="subject_id" onchange="this.form.submit()" class="p-3 border border-yellow-400 rounded-xl">
-            <option value="">Select Subject</option>
-            <?php foreach ($subjects as $sub): ?>
-              <option value="<?= $sub['subject_id'] ?>" <?= $selectedSubject == $sub['subject_id'] ? 'selected' : '' ?>><?= htmlspecialchars($sub['subject_name']) ?></option>
-            <?php endforeach; ?>
-          </select>
-          <?php endif; ?>
-        </div>
-      </form>
-
-      <?php if ($selectedYear && $selectedSection && $selectedSubject): ?>
       <!-- Student Registration Form -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
         <!-- Capture Section -->
@@ -148,9 +80,9 @@ $conn->close();
           </div>
 
           <form action="../config/register_student.php" method="POST" enctype="multipart/form-data" class="space-y-4">
-            <input type="hidden" name="school_year_id" value="<?= htmlspecialchars($selectedYear) ?>">
-            <input type="hidden" name="advisory_id" value="<?= htmlspecialchars($selectedSection) ?>">
-            <input type="hidden" name="subject_id" value="<?= htmlspecialchars($selectedSubject) ?>">
+            <input type="hidden" name="school_year_id" value="<?= htmlspecialchars($school_year_id) ?>">
+            <input type="hidden" name="advisory_id" value="<?= htmlspecialchars($advisory_id) ?>">
+            <input type="hidden" name="subject_id" value="<?= htmlspecialchars($subject_id) ?>">
             <input type="hidden" id="captured_face" name="captured_face">
 
             <input type="text" name="fullname" placeholder="Full Name" required class="w-full p-3 border border-yellow-400 rounded-xl">
@@ -179,7 +111,6 @@ $conn->close();
           document.getElementById('avatarPreview').src = imageData;
         }
       </script>
-      <?php endif; ?>
     </div>
   </div>
 </div>

@@ -1,3 +1,17 @@
+<?php
+session_start();
+
+// Re-store subject data to ensure it's available even after future redirects
+if (isset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['class_name'], $_SESSION['year_label'])) {
+    $_SESSION['active_subject_id'] = $_SESSION['subject_id'];
+    $_SESSION['active_subject_name'] = $_SESSION['subject_name'];
+    $_SESSION['active_class_name'] = $_SESSION['class_name'];
+    $_SESSION['active_year_label'] = $_SESSION['year_label'];
+} else {
+    die("❗ Subject data missing. Please select subject again.");
+}
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -21,6 +35,8 @@
 </head>
 <body class="min-h-screen flex items-center justify-center px-4">
 
+
+
   <div class="bg-orange-100 rounded-[30px] shadow-2xl p-8 w-full max-w-md text-center">
     <h1 class="text-3xl font-bold text-gray-800 mb-6">Teacher Login</h1>
 
@@ -43,6 +59,13 @@
       <?php if (isset($_GET['error'])): ?>
         <p class="text-red-600 text-sm font-semibold">Invalid credentials</p>
       <?php endif; ?>
+
+      <!-- Hidden subject info -->
+      <input type="hidden" name="subject_id" value="<?= $_SESSION['active_subject_id'] ?>">
+      <input type="hidden" name="subject_name" value="<?= htmlspecialchars($_SESSION['active_subject_name']) ?>">
+      <input type="hidden" name="class_name" value="<?= htmlspecialchars($_SESSION['active_class_name']) ?>">
+      <input type="hidden" name="year_label" value="<?= htmlspecialchars($_SESSION['active_year_label']) ?>">
+
 
       <!-- Login Button -->
       <button type="submit" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl w-full transition">
