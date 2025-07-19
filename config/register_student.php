@@ -43,22 +43,42 @@ if (!file_exists('student_faces')) {
   mkdir('student_faces', 0777, true);
 }
 file_put_contents($face_filename, $face_image);
+$avatar_filename = 'student_avatars/' . uniqid('avatar_') . '.png'; // or .jpg if your default is .jpg
+copy('../img/default.png', $avatar_filename); // ✅ Copy default avatar into the folder
 
-// Generate cartoon avatar
-$avatar_filename = 'student_avatars/' . uniqid('avatar_') . '.jpg';
-if (!file_exists('student_avatars')) {
-  mkdir('student_avatars', 0777, true);
-}
 
 // Run cartoonify.py
-$command = escapeshellcmd("python cartoonify.py $face_filename $avatar_filename");
-$output = shell_exec($command);
+//$command = escapeshellcmd("python cartoonify.py $face_filename $avatar_filename");
+//$output = shell_exec($command);
 
 // If failed
-if (strpos($output, 'OK') === false) {
-  echo "⚠️ Avatar cartoonify failed. Output: " . htmlspecialchars($output);
+//if (strpos($output, 'OK') === false) {
+//  echo "⚠️ Avatar cartoonify failed. Output: " . htmlspecialchars($output);
+//  exit;
+//}
+
+// 1. Check if student with same face image OR fullname already exists under the same subject/section/year
+$check_stmt = $conn->prepare("
+  SELECT s.student_id
+  FROM students s
+  JOIN student_enrollments se ON s.student_id = se.student_id
+  WHERE s.fullname = ?
+    AND se.school_year_id = ?
+    AND se.advisory_id = ?
+    AND se.subject_id = ?
+");
+$check_stmt->bind_param("siii", $fullname, $school_year_id, $advisory_id, $subject_id);
+$check_stmt->execute();
+$check_stmt->store_result();
+
+if ($check_stmt->num_rows > 0) {
+  $_SESSION['toast'] = "⚠️ Student already exists in this subject, section and school year.";
+  $_SESSION['toast_type'] = "error";
+  header("Location: ../user/add_student.php");
   exit;
 }
+$check_stmt->close();
+
 
 // Insert student record
 $stmt = $conn->prepare("INSERT INTO students (fullname, gender, face_image_path, avatar_path) VALUES (?, ?, ?, ?)");

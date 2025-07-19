@@ -49,6 +49,7 @@ $class_name = $_SESSION['class_name'];
 $year_label = $_SESSION['year_label'];
 $teacherName = $_SESSION['fullname'];
 
+
 $stmt = $conn->prepare("SELECT s.student_id, s.fullname, s.gender, s.avatar_path 
                         FROM students s
                         JOIN student_enrollments e ON s.student_id = e.student_id

@@ -46,7 +46,7 @@ if (isset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['class_n
       <!-- Username -->
       <div class="relative">
         <span class="icon">👤</span>
-        <input type="text" name="username" placeholder="Username" required class="input-style">
+        <input type="text" name="username" placeholder="Username" required class="input-style" autofocus>
       </div>
 
       <!-- Password -->
@@ -56,9 +56,20 @@ if (isset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['class_n
       </div>
 
       <!-- Error message (optional) -->
-      <?php if (isset($_GET['error'])): ?>
-        <p class="text-red-600 text-sm font-semibold">Invalid credentials</p>
-      <?php endif; ?>
+    <?php if (!empty($_SESSION['failed'])): ?>
+      <div class="bg-red-100 text-red-800 px-4 py-2 rounded mb-4">
+        <?= $_SESSION['failed']; unset($_SESSION['failed']); ?>
+      </div>
+    <?php endif; ?>
+
+      <?php if (!empty($_SESSION['error'])): ?>
+      <div class="bg-red-100 text-red-800 px-4 py-2 rounded mb-4">
+        <?= $_SESSION['error']; unset($_SESSION['error']); ?>
+      </div>
+    <?php endif; ?>
+
+
+
 
       <!-- Hidden subject info -->
       <input type="hidden" name="subject_id" value="<?= $_SESSION['active_subject_id'] ?>">
@@ -75,7 +86,7 @@ if (isset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['class_n
 
     <!-- Back Button -->
     <div class="mt-6 text-left">
-      <a href="account_choice.php" class="inline-flex items-center bg-white px-4 py-2 rounded-full shadow text-gray-700 hover:bg-gray-100 transition">
+      <a href="../config/logout.php" class="inline-flex items-center bg-white px-4 py-2 rounded-full shadow text-gray-700 hover:bg-gray-100 transition">
         ⬅️ Back
       </a>
     </div>

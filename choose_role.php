@@ -12,7 +12,6 @@ if (isset($_GET['subject_id']) && isset($_GET['subject_name']) && isset($_GET['c
 }
 ?>
 
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -20,7 +19,8 @@ if (isset($_GET['subject_id']) && isset($_GET['subject_name']) && isset($_GET['c
   <title>Choose Role</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-cover bg-center min-h-screen flex items-center justify-center" style="background-image: url('img/1.png');">
+<body class="bg-cover bg-center min-h-screen flex items-center justify-center relative" style="background-image: url('img/1.png');">
+  <a href="config/logout.php" class="absolute top-8 right-20 bg-orange-400 hover:bg-orange-500 text-white font-bold px-6 py-2 rounded-lg shadow-md">← Back</a>
   <div class="bg-white/80 backdrop-blur-sm shadow-xl rounded-xl p-10 w-full max-w-3xl text-center border border-gray-200">
     <h1 class="text-3xl font-bold text-gray-800 mb-8">Choose Your Role</h1>
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">

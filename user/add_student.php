@@ -45,6 +45,26 @@ $year_label = $_SESSION['year_label'];
 </head>
 <body>
 <div class="flex min-h-screen">
+  <?php if (isset($_SESSION['toast'])): ?>
+  <div id="toast" class="fixed top-5 right-5 bg-<?= $_SESSION['toast_type'] === 'error' ? 'red' : 'green' ?>-500 text-white px-6 py-3 rounded shadow-lg z-50">
+    <?= $_SESSION['toast'] ?>
+  </div>
+  <script>
+    setTimeout(() => {
+      const toast = document.getElementById('toast');
+      if (toast) toast.style.display = 'none';
+    }, 4000);
+  </script>
+  <?php unset($_SESSION['toast'], $_SESSION['toast_type']); ?>
+<?php endif; ?>
+
+<!-- Toast -->
+<div id="toast" class="fixed top-5 right-5 bg-red-600 text-white px-4 py-2 rounded shadow-lg hidden z-50 transition-opacity duration-300">
+  ⚠️ Please capture the student's face before submitting.
+</div>
+
+
+  
   <!-- Sidebar -->
   <div class="sidebar w-1/5 p-6">
     <h2 class="text-2xl font-bold mb-6">SMARTCLASS KIOSK</h2>
@@ -92,6 +112,24 @@ $year_label = $_SESSION['year_label'];
               <option value="Female">Female</option>
             </select>
             <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-xl font-bold w-full">✅ Confirm</button>
+           
+              <script>
+              document.querySelector("form").addEventListener("submit", function(e) {
+                const captured = document.getElementById("captured_face").value;
+                if (!captured) {
+                  e.preventDefault();
+                  const toast = document.getElementById("toast");
+                  toast.classList.remove("hidden");
+                  toast.classList.add("opacity-100");
+
+                  setTimeout(() => {
+                    toast.classList.add("hidden");
+                  }, 2000); // 1 second
+                }
+              });
+              </script> 
+
+
           </form>
         </div>
       </div>
@@ -113,6 +151,9 @@ $year_label = $_SESSION['year_label'];
       </script>
     </div>
   </div>
+  
 </div>
+
+
 </body>
 </html>

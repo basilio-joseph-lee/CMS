@@ -72,7 +72,7 @@ $yearLabel = $_SESSION['year_label'] ?? '';
       SY: <span class="font-semibold"><?= htmlspecialchars($yearLabel) ?></span>
     </div>
   </div>
-  <a href="teacher_login.php" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold shadow">Logout</a>
+  <a href="../config/logout.php" class="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg font-semibold shadow">Logout</a>
 </div>
 
 
@@ -82,7 +82,7 @@ $yearLabel = $_SESSION['year_label'] ?? '';
     <a href="add_student.php" class="relative pin">
       <div class="card bg-blue-100">
         <div class="card-icon">🎥</div>
-        <div class="font-bold">Add Student</div>
+        <div class="font-bold">Enroll Student</div>
       </div>
     </a>
     <a href="teacher/view_students.php" class="relative pin">
@@ -92,7 +92,7 @@ $yearLabel = $_SESSION['year_label'] ?? '';
       </div>
     </a>
 
-    <a href="attendance_history.php" class="relative pin">
+    <a href="teacher/view_attendance_history.php" class="relative pin">
       <div class="card bg-blue-100">
         <div class="card-icon">📅</div>
         <div class="font-bold text-sm">View Attendance History</div>
@@ -102,14 +102,14 @@ $yearLabel = $_SESSION['year_label'] ?? '';
     <a href="subject_selector.php" class="relative pin">
       <div class="card">
         <div class="card-icon">📖</div>
-        <div class="font-bold">Subject Selector</div>
+        <div class="font-bold">Grades</div>
       </div>
     </a>
 
-    <a href="view_subject_attendance.php" class="relative pin">
+    <a href="teacher/mark_attendance.php" class="relative pin">
       <div class="card bg-blue-100">
         <div class="card-icon">🗓️</div>
-        <div class="font-bold text-sm">View Subject Attendance</div>
+        <div class="font-bold text-sm">Mark Attendance</div>
       </div>
     </a>
 
@@ -121,10 +121,10 @@ $yearLabel = $_SESSION['year_label'] ?? '';
     </a>
 
     <!-- NEW CARD: Create School Year -->
-    <a href="create_school_year.php" class="relative pin">
+    <a href="register_subject.php" class="relative pin">
       <div class="card bg-yellow-100">
         <div class="card-icon">📆</div>
-        <div class="font-bold text-sm">Create School Year</div>
+        <div class="font-bold text-sm">Register Subject</div>
       </div>
     </a>
 
