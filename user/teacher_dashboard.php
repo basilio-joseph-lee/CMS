@@ -99,7 +99,7 @@ $yearLabel = $_SESSION['year_label'] ?? '';
       </div>
     </a>
 
-    <a href="subject_selector.php" class="relative pin">
+    <a href="teacher/grading_sheet.php" class="relative pin">
       <div class="card">
         <div class="card-icon">📖</div>
         <div class="font-bold">Grades</div>
@@ -113,7 +113,7 @@ $yearLabel = $_SESSION['year_label'] ?? '';
       </div>
     </a>
 
-    <a href="post_announcement.php" class="relative pin">
+    <a href="teacher/announcement.php" class="relative pin">
       <div class="card">
         <div class="card-icon">📢</div>
         <div class="font-bold">Post Announcement</div>

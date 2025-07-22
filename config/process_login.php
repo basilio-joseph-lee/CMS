@@ -30,8 +30,8 @@ $result = $stmt->get_result();
 if ($result->num_rows === 1) {
     $teacher = $result->fetch_assoc();
 
-    // For testing: plain text password check (replace with password_verify for hashed pw)
-    if ($password === $teacher['password']) {
+    // ✅ Compare hashed password
+    if (password_verify($password, $teacher['password'])) {
 
         // Check if the teacher is assigned to the selected subject
         $check = $conn->prepare("SELECT * FROM subjects WHERE subject_id = ? AND teacher_id = ?");
@@ -64,6 +64,7 @@ if ($result->num_rows === 1) {
             header("Location: ../user/teacher_login.php");
             exit;
         }
+
     } else {
         $_SESSION['failed'] = "❌ Incorrect password.";
         header("Location: ../user/teacher_login.php");

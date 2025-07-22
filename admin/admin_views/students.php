@@ -1,299 +1,218 @@
 <?php
-// SESSION + DB
-//session_start();
 $conn = new mysqli("localhost", "root", "", "cms");
 if ($conn->connect_error) die("Connection failed: " . $conn->connect_error);
 
-// POST HANDLERS
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  $fullname = $_POST['fullname'];
-  $gender = $_POST['gender'];
-  $advisory_id = $_POST['advisory_id'];
-  $subject_id = $_POST['subject_id'];
-  $school_year_id = $_POST['school_year_id'];
-  $action = $_POST['action'];
-  $student_id = $_POST['student_id'] ?? null;
-
-  if ($action === 'add') {
-    $face_image = $_POST['avatar'] ?? '';
-    $face_image = str_replace('data:image/jpeg;base64,', '', $face_image);
-    $face_image = base64_decode($face_image);
-
-    if (!file_exists('student_faces')) mkdir('student_faces', 0777, true);
-    $face_filename = 'student_faces/' . uniqid('face_') . '.jpg';
-    file_put_contents($face_filename, $face_image);
-
-    if (!file_exists('student_avatars')) mkdir('student_avatars', 0777, true);
-    $avatar_filename = 'student_avatars/' . uniqid('avatar_') . '.jpg';
-    $output = shell_exec("python cartoonify.py $face_filename $avatar_filename");
-
-    if (strpos($output, 'OK') === false) {
-      echo "⚠️ Avatar cartoonify failed. Output: " . htmlspecialchars($output);
-      exit;
-    }
-
-    $stmt = $conn->prepare("INSERT INTO students (fullname, gender, face_image_path, avatar_path) VALUES (?, ?, ?, ?)");
-    $stmt->bind_param("ssss", $fullname, $gender, $face_filename, $avatar_filename);
-    $stmt->execute();
-    $newStudentId = $stmt->insert_id;
-
-    $stmt2 = $conn->prepare("INSERT INTO student_enrollments (student_id, advisory_id, school_year_id, subject_id) VALUES (?, ?, ?, ?)");
-    $stmt2->bind_param("iiii", $newStudentId, $advisory_id, $school_year_id, $subject_id);
-    $stmt2->execute();
-  }
-
-  if ($action === 'edit') {
-    $stmt = $conn->prepare("UPDATE students SET fullname=?, gender=? WHERE student_id=?");
-    $stmt->bind_param("ssi", $fullname, $gender, $student_id);
-    $stmt->execute();
-
-    $stmt2 = $conn->prepare("UPDATE student_enrollments SET advisory_id=?, school_year_id=?, subject_id=? WHERE student_id=?");
-    $stmt2->bind_param("iiii", $advisory_id, $school_year_id, $subject_id, $student_id);
-    $stmt2->execute();
-  }
-
-  echo "<script>location.href='admin.php?page=students';
-
-// Webcam setup
-const video = document.getElementById('video');
-  })
-  .catch(err => {
-    console.error('Camera access denied:', err);
-  });
-
-function captureFace() {
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-  const base64Image = canvas.toDataURL('image/jpeg');
-  document.getElementById('avatarData').value = base64Image;
-
-  // Optional: Send to server.py backend
-  fetch('http://127.0.0.1:5000/register', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: base64Image })
-  })
-  .then(res => res.json())
-  .then(data => {
-    console.log('Face registered:', data);
-    alert('✅ Face registered successfully');
-  })
-  .catch(err => {
-    console.error('Registration failed:', err);
-    alert('❌ Face registration failed.');
-  });
-}
-</script>";
-  exit;
-}
-
-if (isset($_GET['delete_id'])) {
-  $id = $_GET['delete_id'];
-  $conn->query("DELETE FROM student_enrollments WHERE student_id = $id");
-  $conn->query("DELETE FROM attendance_records WHERE student_id = $id");
-  $conn->query("DELETE FROM students WHERE student_id = $id");
+// Handle Update
+if (isset($_POST['update_id'])) {
+  $id = $_POST['update_id'];
+  $fullname = $_POST['update_fullname'];
+  $gender = $_POST['update_gender'];
+  $stmt = $conn->prepare("UPDATE students SET fullname=?, gender=? WHERE student_id=?");
+  $stmt->bind_param("ssi", $fullname, $gender, $id);
+  $stmt->execute();
+  $_SESSION['toast'] = "Student updated successfully!";
+  $_SESSION['toast_type'] = "success";
   echo "<script>location.href='admin.php?page=students';</script>";
   exit;
 }
 
-$schoolYears = $conn->query("SELECT * FROM school_years ORDER BY year_label DESC");
-$sections = $conn->query("SELECT * FROM advisory_classes ORDER BY class_name ASC");
-$subjects = $conn->query("SELECT * FROM subjects ORDER BY subject_name ASC");
+// Handle Delete
+if (isset($_GET['delete_id'])) {
+  $id = $_GET['delete_id'];
+  $conn->query("DELETE FROM students WHERE student_id=$id");
+  $conn->query("DELETE FROM student_enrollments WHERE student_id=$id");
+  $_SESSION['toast'] = "Student deleted!";
+  $_SESSION['toast_type'] = "error";
+  echo "<script>location.href='admin.php?page=students';</script>";
+  exit;
+}
 
-$filterYear = $_GET['school_year_id'] ?? '';
-$filterSection = $_GET['advisory_id'] ?? '';
-$where = "WHERE 1=1";
-if ($filterYear) $where .= " AND se.school_year_id = " . intval($filterYear);
-if ($filterSection) $where .= " AND se.advisory_id = " . intval($filterSection);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+  $fullname = $_POST['fullname'];
+  $gender = $_POST['gender'];
 
-$query = "
-  SELECT s.*, se.advisory_id, se.subject_id, se.school_year_id,
-         ac.class_name, sy.year_label, subj.subject_name
-  FROM students s
-  JOIN student_enrollments se ON s.student_id = se.student_id
-  LEFT JOIN advisory_classes ac ON se.advisory_id = ac.advisory_id
-  LEFT JOIN school_years sy ON se.school_year_id = sy.school_year_id
-  LEFT JOIN subjects subj ON se.subject_id = subj.subject_id
-  $where
-  ORDER BY s.fullname ASC
-";
-$students = $conn->query($query);
+  $face_image = $_POST['captured_face'] ?? '';
+  $face_image = str_replace('data:image/jpeg;base64,', '', $face_image);
+  $face_image = base64_decode($face_image);
+
+  if (!file_exists('student_faces')) mkdir('student_faces', 0777, true);
+  $face_filename = 'student_faces/' . uniqid('face_') . '.jpg';
+  file_put_contents($face_filename, $face_image);
+
+  $avatar_filename = '../img/default.png';
+
+$stmt = $conn->prepare("INSERT INTO students (fullname, gender, face_image_path, avatar_path) VALUES (?, ?, ?, ?)");
+$stmt->bind_param("ssss", $fullname, $gender, $face_filename, $avatar_filename);
+$stmt->execute();
+
+  
+
+  $_SESSION['toast'] = "Student added successfully!";
+  $_SESSION['toast_type'] = "success";
+  echo "<script>location.href='admin.php?page=students';</script>";
+  exit;
+}
+
+$students = $conn->query("SELECT * FROM students ORDER BY fullname ASC");
 ?>
 
-<div class="flex justify-between items-center mb-4">
-  <!-- Removed duplicate heading -->
-  <button onclick="openAddModal()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-    ➕ Add Student
-  </button>
-</div>
-
-<form method="GET" action="admin.php" class="mb-6 flex flex-wrap gap-4">
-  <input type="hidden" name="page" value="students">
-  <select name="school_year_id" class="p-2 border rounded">
-    <option value="">All Years</option>
-    <?php $schoolYears->data_seek(0); while ($y = $schoolYears->fetch_assoc()): ?>
-      <option value="<?= $y['school_year_id'] ?>" <?= $filterYear == $y['school_year_id'] ? 'selected' : '' ?>>
-        <?= $y['year_label'] ?>
-      </option>
-    <?php endwhile; ?>
-  </select>
-  <select name="advisory_id" class="p-2 border rounded">
-    <option value="">All Sections</option>
-    <?php $sections->data_seek(0); while ($s = $sections->fetch_assoc()): ?>
-      <option value="<?= $s['advisory_id'] ?>" <?= $filterSection == $s['advisory_id'] ? 'selected' : '' ?>>
-        <?= $s['class_name'] ?>
-      </option>
-    <?php endwhile; ?>
-  </select>
-  <button type="submit" class="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700">Filter</button>
-</form>
-
-<table class="w-full table-auto bg-white shadow rounded text-sm">
-  <thead class="bg-gray-200">
-    <tr>
-      <th class="px-4 py-2">Avatar</th>
-      <th class="px-4 py-2">Name</th>
-      <th class="px-4 py-2">Gender</th>
-      <th class="px-4 py-2">Section</th>
-      <th class="px-4 py-2">Subject</th>
-      <th class="px-4 py-2">Year</th>
-      <th class="px-4 py-2">Action</th>
-    </tr>
-  </thead>
-  <tbody>
-    <?php while ($row = $students->fetch_assoc()): ?>
-      <tr class="border-t">
-        <td class="px-4 py-2">
-          <img src="<?= !empty($row['avatar_path']) ? $row['avatar_path'] : 'img/default.png' ?>" class="w-10 h-10 rounded-full object-cover">
-        </td>
-        <td class="px-4 py-2"><?= $row['fullname'] ?></td>
-        <td class="px-4 py-2"><?= $row['gender'] ?></td>
-        <td class="px-4 py-2"><?= $row['class_name'] ?></td>
-        <td class="px-4 py-2"><?= $row['subject_name'] ?></td>
-        <td class="px-4 py-2"><?= $row['year_label'] ?></td>
-        <td class="px-4 py-2 space-x-2">
-          <button onclick='openEditModal(<?= json_encode($row) ?>)' class="text-blue-600 hover:underline">✏️ Edit</button>
-          <a href="admin.php?page=students&delete_id=<?= $row['student_id'] ?>" onclick="return confirm('Delete this student and all records?')" class="text-red-600 hover:underline">🗑 Delete</a>
-        </td>
-      </tr>
-    <?php endwhile; ?>
-  </tbody>
-</table>
-
-<!-- MODAL -->
-<!-- Modal -->
-<div id="studentModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center hidden z-50 opacity-0 transition-opacity duration-1000 ease-in-out">
-  <div class="bg-white p-6 rounded-lg shadow-lg w-full max-w-4xl relative">
-    <h2 id="modalTitle" class="text-2xl font-bold mb-6 text-blue-800">Add/Edit Student</h2>
-
-    <form method="POST" enctype="multipart/form-data">
-      <input type="hidden" name="action" id="formAction">
-      <input type="hidden" name="student_id" id="studentId">
-
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <label class="block mb-1 font-semibold">Full Name</label>
-          <input type="text" name="fullname" id="fullname" required class="w-full p-2 border rounded">
-        </div>
-        <div>
-          <label class="block mb-1 font-semibold">Gender</label>
-          <select name="gender" id="gender" required class="w-full p-2 border rounded">
-            <option value="">Select Gender</option>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-          </select>
-        </div>
-        <div>
-          <label class="block mb-1 font-semibold">Section</label>
-          <select name="advisory_id" id="advisoryId" required class="w-full p-2 border rounded">
-            <option value="">Select Section</option>
-            <?php $sections->data_seek(0); while ($sec = $sections->fetch_assoc()): ?>
-              <option value="<?= $sec['advisory_id'] ?>"><?= $sec['class_name'] ?></option>
-            <?php endwhile; ?>
-          </select>
-        </div>
-        <div>
-          <label class="block mb-1 font-semibold">Subject</label>
-          <select name="subject_id" id="subjectId" required class="w-full p-2 border rounded">
-            <option value="">Select Subject</option>
-            <?php $subjects->data_seek(0); while ($sub = $subjects->fetch_assoc()): ?>
-              <option value="<?= $sub['subject_id'] ?>"><?= $sub['subject_name'] ?></option>
-            <?php endwhile; ?>
-          </select>
-        </div>
-        <div>
-          <label class="block mb-1 font-semibold">School Year</label>
-          <select name="school_year_id" id="schoolYearId" required class="w-full p-2 border rounded">
-            <option value="">Select Year</option>
-            <?php $schoolYears->data_seek(0); while ($sy = $schoolYears->fetch_assoc()): ?>
-              <option value="<?= $sy['school_year_id'] ?>"><?= $sy['year_label'] ?></option>
-            <?php endwhile; ?>
-          </select>
-        </div>
-        <div>
-  <label class="block mb-1 font-semibold">Live Capture</label>
-  <video id="video" autoplay class="w-full h-48 bg-black rounded"></video>
-  <button type="button" onclick="captureFace()" class="mt-2 w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">📸 Capture Face</button>
-  <input type="hidden" name="avatar" id="avatarData">
-</div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Manage Students</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #fefae0;
+      font-family: 'Comic Sans MS', cursive, sans-serif;
+    }
+  </style>
+</head>
+<body>
+  <div class="min-h-screen py-12 px-6">
+    <div class="bg-white shadow-xl rounded-2xl p-6 w-full max-w-5xl mx-auto">
+      <div class="flex justify-between mb-6">
+        <h1 class="text-3xl font-bold text-[#bc6c25]">📌 Student List</h1>
+        <button onclick="openAddStudentModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">➕ Add Student</button>
       </div>
 
-      <div class="text-right mt-6">
-        <button type="button" onclick="closeModal()" class="mr-2 px-4 py-2 border rounded">Cancel</button>
-        <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">Save</button>
+      <table class="w-full text-sm text-left">
+        <thead class="bg-gray-200 text-gray-700">
+          <tr>
+            <th class="py-2 px-4">ID</th>
+            <th class="py-2 px-4">Full Name</th>
+            <th class="py-2 px-4">Gender</th>
+            <th class="py-2 px-4">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <?php while ($row = $students->fetch_assoc()): ?>
+          <tr class="border-t">
+            <td class="py-2 px-4"><?= $row['student_id'] ?></td>
+            <td class="py-2 px-4"><?= htmlspecialchars($row['fullname']) ?></td>
+            <td class="py-2 px-4"><?= htmlspecialchars($row['gender']) ?></td>
+            <td class="py-2 px-4">
+              <button onclick="openEditModal(<?= $row['student_id'] ?>, '<?= htmlspecialchars($row['fullname']) ?>', '<?= $row['gender'] ?>')" class="text-blue-600 hover:underline">✏️ Edit</button>
+              <button onclick="confirmDelete(<?= $row['student_id'] ?>)" class="text-red-600 hover:underline ml-2">🗑️ Delete</button>
+            </td>
+          </tr>
+          <?php endwhile; ?>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Add Student Modal -->
+    <div id="addModal" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50">
+      <div class="bg-white p-6 rounded-2xl shadow-lg w-full max-w-6xl mx-4 overflow-y-auto max-h-[95vh]">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-bold text-[#bc6c25]">➕ Add Student</h2>
+          <button onclick="closeAddStudentModal()" class="text-gray-500 text-xl">✖</button>
+        </div>
+
+        <form method="POST">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Capture Section -->
+            <div class="text-center">
+              <div class="w-full h-60 bg-blue-100 rounded-xl flex items-center justify-center">
+                <video id="video" width="320" height="240" autoplay class="rounded"></video>
+                <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+              </div>
+              <button type="button" onclick="captureImage()" class="mt-2 bg-orange-400 hover:bg-orange-500 text-white px-6 py-2 rounded-lg font-bold">Capture Face</button>
+            </div>
+
+            <!-- Input Section -->
+            <div>
+              <div class="bg-yellow-100 rounded-xl mb-4 p-4 text-center">
+                <img id="avatarPreview" src="img/default.png" class="w-24 h-24 mx-auto rounded-full">
+                <p class="text-sm text-gray-700 mt-2">Preview of student avatar</p>
+              </div>
+              <input type="hidden" name="captured_face" id="captured_face">
+
+              <input type="text" name="fullname" placeholder="Full Name" required class="w-full p-3 mb-3 border border-yellow-400 rounded-xl">
+              <select name="gender" required class="w-full p-3 mb-3 border border-yellow-400 rounded-xl">
+                <option value="">Select Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+              
+              <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-xl font-bold w-full">✅ Confirm</button>
+            </div>
+          </div>
+        </form>
       </div>
-    </form>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center">
+      <form method="POST" class="bg-white rounded-xl p-6 shadow-md w-full max-w-md">
+        <h2 class="text-xl font-bold mb-4 text-[#bc6c25]">✏️ Edit Student</h2>
+        <input type="hidden" name="update_id" id="edit_id">
+        <input type="text" name="update_fullname" id="edit_fullname" required placeholder="Full Name" class="w-full p-3 mb-3 border border-yellow-400 rounded-xl">
+        <select name="update_gender" id="edit_gender" required class="w-full p-3 mb-4 border border-yellow-400 rounded-xl">
+          <option value="">Select Gender</option>
+          <option value="Male">Male</option>
+          <option value="Female">Female</option>
+        </select>
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="closeEditModal()" class="px-4 py-2 bg-gray-300 rounded-xl">Cancel</button>
+          <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl font-bold">Save</button>
+        </div>
+      </form>
+    </div>
   </div>
-</div>
 
-<script>
-function openAddModal() {
-  const modal = document.getElementById('studentModal');
-  document.getElementById('modalTitle').innerText = "➕ Add Student";
-  document.getElementById('formAction').value = 'add';
-  document.getElementById('studentId').value = '';
-  document.getElementById('fullname').value = '';
-  document.getElementById('gender').value = '';
-  document.getElementById('advisoryId').value = '';
-  document.getElementById('subjectId').value = '';
-  document.getElementById('schoolYearId').value = '';
-  modal.classList.remove('hidden');
-  modal.classList.add('opacity-0');
-  setTimeout(() => modal.classList.remove('opacity-0'), 50);
+  <?php if (!empty($_SESSION['toast'])): ?>
+  <div class="fixed bottom-6 right-6 bg-<?= $_SESSION['toast_type'] === 'error' ? 'red' : 'green' ?>-500 text-white px-4 py-3 rounded-xl shadow z-50 animate-bounce">
+    <?= $_SESSION['toast'] ?>
+  </div>
+  <script>setTimeout(() => { document.querySelector('.fixed.bottom-6').remove(); }, 3000);</script>
+  <?php unset($_SESSION['toast'], $_SESSION['toast_type']); endif; ?>
 
-  // Start webcam
-  if (!video.srcObject) {
-    navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
-      video.srcObject = stream;
-    }).catch(err => {
-      console.error('Webcam error:', err);
-    });
-  }
-}
+  <script>
+    function openEditModal(id, name, gender) {
+      document.getElementById('edit_id').value = id;
+      document.getElementById('edit_fullname').value = name;
+      document.getElementById('edit_gender').value = gender;
+      document.getElementById('editModal').classList.remove('hidden');
+    }
 
-function openEditModal(data) {
-  document.getElementById('modalTitle').innerText = "✏️ Edit Student";
-  document.getElementById('formAction').value = 'edit';
-  document.getElementById('studentId').value = data.student_id;
-  document.getElementById('fullname').value = data.fullname;
-  document.getElementById('gender').value = data.gender;
-  document.getElementById('advisoryId').value = data.advisory_id;
-  document.getElementById('subjectId').value = data.subject_id;
-  document.getElementById('schoolYearId').value = data.school_year_id;
-  
-  const modal = document.getElementById('studentModal');
-  modal.classList.remove('hidden');
-  modal.classList.add('opacity-0');
-  setTimeout(() => modal.classList.remove('opacity-0'), 50);
-}
+    function closeEditModal() {
+      document.getElementById('editModal').classList.add('hidden');
+    }
 
-function closeModal() {
-  const modal = document.getElementById('studentModal');
-  modal.classList.add('opacity-0');
-  setTimeout(() => modal.classList.add('hidden'), 1000);
-}
-</script>
+    function confirmDelete(id) {
+      if (confirm("Are you sure you want to delete this student?")) {
+        window.location.href = `admin.php?page=students&delete_id=${id}`;
+      }
+    }
+
+    let stream = null;
+    function openAddStudentModal() {
+      document.getElementById('addModal').classList.remove('hidden');
+      if (!stream) {
+        navigator.mediaDevices.getUserMedia({ video: true }).then(mediaStream => {
+          stream = mediaStream;
+          document.getElementById('video').srcObject = stream;
+        }).catch(err => alert("Camera error: " + err));
+      }
+    }
+    function closeAddStudentModal() {
+      document.getElementById('addModal').classList.add('hidden');
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+        document.getElementById('video').srcObject = null;
+      }
+    }
+    function captureImage() {
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(document.getElementById('video'), 0, 0, canvas.width, canvas.height);
+      const data = canvas.toDataURL('image/jpeg');
+      document.getElementById('captured_face').value = data;
+      document.getElementById('avatarPreview').src = data;
+    }
+  </script>
+</body>
+</html>

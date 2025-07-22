@@ -4,11 +4,14 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-$sql = "SELECT s.subject_id, s.subject_name, ac.class_name, sy.year_label
+$sql = "SELECT MIN(s.subject_id) AS subject_id, s.subject_name, ac.class_name, sy.year_label
         FROM subjects s
         JOIN advisory_classes ac ON s.advisory_id = ac.advisory_id
         JOIN school_years sy ON s.school_year_id = sy.school_year_id
+        GROUP BY s.subject_name, ac.class_name, sy.year_label
         ORDER BY sy.year_label DESC, ac.class_name ASC";
+
+
 
 $result = $conn->query($sql);
 

@@ -12,12 +12,7 @@ $dbname = "cms";
 $db_user = "root";
 $db_pass = "";
 
-$conn = new mysqli($host, $db_user, $db_pass, $dbname);
-if ($conn->connect_error) {
-  http_response_code(500);
-  echo json_encode(['error' => 'Database connection failed']);
-  exit;
-}
+require_once("db.php");
 
 // ✅ Use regular form POST
 $data = $_POST;
