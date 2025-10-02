@@ -102,6 +102,7 @@ while ($row = $resultMarked->fetch_assoc()) {
             <th class="py-3 px-4 text-lg text-left">Student Name</th>
             <th class="py-3 px-4 text-lg">✅ Present</th>
             <th class="py-3 px-4 text-lg">❌ Absent</th>
+            <th class="py-3 px-4 text-lg text-yellow-600">⏰ Late</th>
           </tr>
         </thead>
         <tbody>
@@ -127,6 +128,9 @@ while ($row = $resultMarked->fetch_assoc()) {
               </td>
               <td class="py-3">
                 <input type="radio" name="attendance[<?= $student['student_id'] ?>]" value="Absent" class="accent-red-500 w-5 h-5" <?= $isMarked ? 'disabled' : '' ?>>
+              </td>
+              <td class="py-3">
+                <input type="radio" name="attendance[<?= $student['student_id'] ?>]" value="Late" class="accent-yellow-500 w-5 h-5" <?= $isMarked ? 'disabled' : '' ?>>
               </td>
             </tr>
           <?php endforeach; ?>
@@ -160,8 +164,10 @@ function nextRow() {
 document.addEventListener("keydown", (e) => {
   const row = rows[current];
   if (!row) return;
-  const presentInput = row.querySelector(".present-radio");
+
+  const presentInput = row.querySelector("input[value='Present']");
   const absentInput = row.querySelector("input[value='Absent']");
+  const lateInput = row.querySelector("input[value='Late']");
   const sound = document.getElementById("tickSound");
 
   if (e.key === "Enter" && presentInput && !presentInput.disabled) {
@@ -171,6 +177,11 @@ document.addEventListener("keydown", (e) => {
     checkAutoSubmit();
   } else if (e.key === "ArrowRight" && absentInput && !absentInput.disabled) {
     absentInput.checked = true;
+    sound?.play();
+    nextRow();
+    checkAutoSubmit();
+  } else if ((e.key === "l" || e.key === "L") && lateInput && !lateInput.disabled) {
+    lateInput.checked = true;
     sound?.play();
     nextRow();
     checkAutoSubmit();

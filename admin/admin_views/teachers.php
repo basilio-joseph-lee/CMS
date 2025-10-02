@@ -47,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $subjectName = trim($_POST['subject_name']);
     $sectionName = trim($_POST['section_name']);
     $schoolYearId = $_POST['school_year_id'];
+    $isAdvisory = $_POST['is_advisory'] ?? 'no';
 
     // Check if same subject and section is already assigned (regardless of teacher)
     $conflictCheck = $conn->prepare("SELECT * FROM subjects s JOIN advisory_classes ac ON s.advisory_id = ac.advisory_id WHERE s.subject_name = ? AND ac.class_name = ? AND s.school_year_id = ?");
@@ -68,8 +69,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($result->num_rows > 0) {
       $advisoryId = $result->fetch_assoc()['advisory_id'];
     } else {
-      $insertAdvisory = $conn->prepare("INSERT INTO advisory_classes (teacher_id, school_year_id, class_name) VALUES (?, ?, ?)");
-      $insertAdvisory->bind_param("iis", $teacherId, $schoolYearId, $sectionName);
+
+      $insertAdvisory = $conn->prepare("INSERT INTO advisory_classes (teacher_id, school_year_id, class_name, is_advisory) VALUES (?, ?, ?, ?)");
+      $insertAdvisory->bind_param("iiss", $teacherId, $schoolYearId, $sectionName, $isAdvisory);
       $insertAdvisory->execute();
       $advisoryId = $insertAdvisory->insert_id;
       $insertAdvisory->close();
@@ -90,8 +92,59 @@ $teachers = $conn->query("SELECT * FROM teachers ORDER BY fullname ASC");
 $school_years = $conn->query("SELECT * FROM school_years WHERE status = 'active'");
 $master_subjects = $conn->query("SELECT * FROM master_subjects");
 $master_sections = $conn->query("SELECT * FROM master_sections");
+
+$teacherAdvisories = [];
+$res = $conn->query("SELECT ac.teacher_id, ac.class_name, sy.year_label 
+                     FROM advisory_classes ac 
+                     JOIN school_years sy ON ac.school_year_id = sy.school_year_id 
+                     WHERE ac.is_advisory = 'yes'");
+while ($row = $res->fetch_assoc()) {
+  $teacherAdvisories[$row['teacher_id']] = $row['class_name'] . ' (' . $row['year_label'] . ')';
+}
+
 ?>
 
+<!-- Notification Bell HTML -->
+<div class="relative float-right mb-4 z-50">
+  <button onclick="toggleDropdown()" class="relative bg-white border rounded-full p-2 shadow hover:bg-blue-100">
+    🔔
+    <?php
+    $notiCount = $conn->query("SELECT COUNT(*) as total FROM section_access_requests WHERE status = 'pending'")->fetch_assoc()['total'];
+    if ($notiCount > 0): ?>
+      <span class="absolute top-0 right-0 bg-red-500 text-white text-xs rounded-full px-1"><?= $notiCount ?></span>
+    <?php endif; ?>
+  </button>
+
+  <div id="dropdownPanel" class="hidden absolute right-0 mt-2 w-96 bg-white border rounded shadow-lg z-50 max-h-96 overflow-y-auto">
+    <div class="p-4 font-bold border-b">Pending Section Access Requests</div>
+
+    <?php
+    $pendingReq = $conn->query("
+      SELECT r.request_id, t.fullname AS requester, ac.class_name, sy.year_label, r.reason
+      FROM section_access_requests r
+      JOIN teachers t ON r.requester_id = t.teacher_id
+      JOIN advisory_classes ac ON r.advisory_id = ac.advisory_id
+      JOIN school_years sy ON r.school_year_id = sy.school_year_id
+      WHERE r.status = 'pending'
+      ORDER BY r.requested_at DESC
+    ");
+
+    if ($pendingReq->num_rows === 0): ?>
+      <div class="p-4 text-sm text-gray-500 italic">No pending requests.</div>
+    <?php else:
+      while ($row = $pendingReq->fetch_assoc()): ?>
+        <div class="px-4 py-3 border-b text-sm">
+          <div><strong><?= htmlspecialchars($row['requester']) ?></strong> → <?= $row['class_name'] ?> (<?= $row['year_label'] ?>)</div>
+          <div class="text-gray-500 italic"><?= htmlspecialchars($row['reason']) ?></div>
+          <div class="mt-1 space-x-2">
+            <a href="approve_request.php?id=<?= $row['request_id'] ?>&action=approve" class="text-green-600 font-bold">✅ Approve</a>
+            <a href="approve_request.php?id=<?= $row['request_id'] ?>&action=deny" class="text-red-600 font-bold">❌ Deny</a>
+          </div>
+        </div>
+      <?php endwhile;
+    endif; ?>
+  </div>
+</div>
 
 
 
@@ -132,6 +185,7 @@ $master_sections = $conn->query("SELECT * FROM master_sections");
     <tr>
       <th class="py-2 px-4 text-left">Full Name</th>
       <th class="py-2 px-4 text-left">Username</th>
+      <th class="py-2 px-4 text-left">Advisory Section</th>
       <th class="py-2 px-4 text-left">Actions</th>
     </tr>
   </thead>
@@ -140,6 +194,9 @@ $master_sections = $conn->query("SELECT * FROM master_sections");
       <tr class="border-t">
         <td class="py-2 px-4"><?= htmlspecialchars($row['fullname']) ?></td>
         <td class="py-2 px-4"><?= htmlspecialchars($row['username']) ?></td>
+          <td class="py-2 px-4">
+          <?= $teacherAdvisories[$row['teacher_id']] ?? '<span class="text-gray-400 italic">None</span>' ?>
+        </td>
         <td class="py-2 px-4 space-x-2">
           <button onclick="document.getElementById('editModal<?= $row['teacher_id'] ?>').classList.remove('hidden')" class="bg-yellow-500 text-white px-3 py-1 rounded">Edit</button>
           <button onclick="document.getElementById('deleteModal<?= $row['teacher_id'] ?>').classList.remove('hidden')" class="bg-red-600 text-white px-3 py-1 rounded">Delete</button>
@@ -195,6 +252,15 @@ $master_sections = $conn->query("SELECT * FROM master_sections");
             <input type="hidden" name="teacher_id" value="<?= $row['teacher_id'] ?>">
 
             <div class="mb-3">
+              <label>Is Adviser?</label>
+              <select name="is_advisory" class="w-full border p-2 rounded" required>
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </div>
+
+
+            <div class="mb-3">
               <label>Subject Name</label>
               <select name="subject_name" class="w-full border p-2 rounded" required>
                 <?php foreach ($master_subjects as $subject): ?>
@@ -231,6 +297,8 @@ $master_sections = $conn->query("SELECT * FROM master_sections");
   </tbody>
 </table>
 
+
+
 <!-- Add Modal -->
 <div id="addModal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center hidden z-50">
   <div class="bg-white p-6 rounded shadow max-w-md w-full fade-in">
@@ -253,4 +321,20 @@ $master_sections = $conn->query("SELECT * FROM master_sections");
       <button type="button" onclick="document.getElementById('addModal').classList.add('hidden')" class="ml-2 text-gray-600">Cancel</button>
     </form>
   </div>
+  
 </div>
+<script>
+  function toggleDropdown() {
+    const dropdown = document.getElementById('dropdownPanel');
+    dropdown.classList.toggle('hidden');
+  }
+
+  // Hide dropdown if clicking outside
+  document.addEventListener('click', function (e) {
+    const isDropdown = e.target.closest('#dropdownPanel');
+    const isBell = e.target.closest('button');
+    if (!isDropdown && !isBell) {
+      document.getElementById('dropdownPanel')?.classList.add('hidden');
+    }
+  });
+</script>

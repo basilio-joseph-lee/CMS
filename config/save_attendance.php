@@ -35,7 +35,7 @@ if (!$subject_id || !$advisory_id || !$school_year_id) {
 
 $inserted = 0;
 foreach ($data['attendance'] as $student_id => $status) {
-  if (!in_array($status, ['Present', 'Absent'])) continue;
+  if (!in_array($status, ['Present', 'Absent', 'Late'])) continue;
 
   $stmt = $conn->prepare("INSERT INTO attendance_records (student_id, subject_id, advisory_id, school_year_id, status) VALUES (?, ?, ?, ?, ?)");
   $stmt->bind_param("iiiis", $student_id, $subject_id, $advisory_id, $school_year_id, $status);

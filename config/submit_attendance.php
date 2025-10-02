@@ -1,35 +1,53 @@
 <?php
 session_start();
-$conn = new mysqli("localhost", "root", "", "cms");
-if ($conn->connect_error) die("DB connection failed.");
+include("db.php");
 
-$student_id = $_SESSION['student_id'] ?? null;
-$subject_id = $_SESSION['active_subject_id'] ?? null;
-$advisory_id = $_SESSION['active_advisory_id'] ?? null;
-$school_year_id = $_SESSION['active_school_year_id'] ?? null;
-
-if (!$student_id || !$subject_id || !$advisory_id || !$school_year_id) {
-    header("Location: ../../user/dashboard.php?attended=0");
-    exit;
+if ($conn->connect_error) {
+  die("Connection failed: " . $conn->connect_error);
 }
 
-$today = date('Y-m-d');
-$checkStmt = $conn->prepare("
-    SELECT * FROM attendance_records 
-    WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ? 
-    AND DATE(timestamp) = ?
-");
-$checkStmt->bind_param("iiiis", $student_id, $subject_id, $advisory_id, $school_year_id, $today);
-$checkStmt->execute();
-$checkResult = $checkStmt->get_result();
+// Check POST data
+if (!isset($_POST['attendance'], $_POST['subject_id'], $_POST['advisory_id'], $_POST['school_year_id'])) {
+  $_SESSION['toast'] = "Missing form data.";
+  $_SESSION['toast_type'] = "error";
+  header("Location: ../teacher/mark_attendance.php");
+  exit;
+}
 
-if ($checkResult->num_rows === 0) {
-    $status = 'Present';
-    $insertStmt = $conn->prepare("INSERT INTO attendance_records (student_id, subject_id, advisory_id, school_year_id, status) VALUES (?, ?, ?, ?, ?)");
+$attendance = $_POST['attendance'];
+$subject_id = $_POST['subject_id'];
+$advisory_id = $_POST['advisory_id'];
+$school_year_id = $_POST['school_year_id'];
+$today = date('Y-m-d');
+
+// Update or insert attendance per student
+foreach ($attendance as $student_id => $status) {
+  // Skip if status is invalid
+  if (!in_array($status, ['Present', 'Absent', 'Late'])) continue;
+
+  // Check if already marked today
+  $checkStmt = $conn->prepare("SELECT attendance_id FROM attendance_records 
+    WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ? AND DATE(timestamp) = ?");
+  $checkStmt->bind_param("iiiis", $student_id, $subject_id, $advisory_id, $school_year_id, $today);
+  $checkStmt->execute();
+  $checkResult = $checkStmt->get_result();
+
+  if ($checkResult->num_rows > 0) {
+    // Update existing record
+    $updateStmt = $conn->prepare("UPDATE attendance_records 
+      SET status = ? WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ? AND DATE(timestamp) = ?");
+    $updateStmt->bind_param("siiiis", $status, $student_id, $subject_id, $advisory_id, $school_year_id, $today);
+    $updateStmt->execute();
+  } else {
+    // Insert new record
+    $insertStmt = $conn->prepare("INSERT INTO attendance_records 
+      (student_id, subject_id, advisory_id, school_year_id, status) VALUES (?, ?, ?, ?, ?)");
     $insertStmt->bind_param("iiiis", $student_id, $subject_id, $advisory_id, $school_year_id, $status);
     $insertStmt->execute();
-    header("Location: ../user/dashboard.php?attended=1");
-} else {
-    header("Location: ../user/dashboard.php?attended=already");
+  }
 }
+
+$_SESSION['toast'] = "✅ Attendance saved successfully!";
+$_SESSION['toast_type'] = "success";
+header("Location: ../teacher/mark_attendance.php?success=1");
 exit;

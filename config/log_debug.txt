@@ -1,0 +1,1 @@
+{"user":"Joseph","student_id":92,"subject_id":"42","subject_name":"AP","advisory_id":"32","class_name":"7-Wisdom","school_year_id":"2","year_label":"2025-2026","teacher_id":7,"fullname":"Enami Asa"}

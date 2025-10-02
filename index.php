@@ -1,65 +1,71 @@
-<?php
-$conn = new mysqli("localhost", "root", "", "cms");
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
-}
-
-$sql = "SELECT MIN(s.subject_id) AS subject_id, s.subject_name, ac.class_name, sy.year_label
-        FROM subjects s
-        JOIN advisory_classes ac ON s.advisory_id = ac.advisory_id
-        JOIN school_years sy ON s.school_year_id = sy.school_year_id
-        GROUP BY s.subject_name, ac.class_name, sy.year_label
-        ORDER BY sy.year_label DESC, ac.class_name ASC";
-
-
-
-$result = $conn->query($sql);
-
-$current_year = '';
-$subjects = [];
-while ($row = $result->fetch_assoc()) {
-    $current_year = $row['year_label'];
-    $subjects[] = $row;
-}
-?>
-
+<?php session_start(); ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Classroom Subject Selector</title>
+  <title>Login Portal</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body {
-      background-image: url('img/1.png'); /* Add your background image */
+      background-image: url('img/role.png');
       background-size: cover;
       background-position: center;
       font-family: 'Comic Sans MS', cursive, sans-serif;
     }
-
-    .card {
-      background-image: url('img/role.png'); /* Optional paper texture */
-      background-size: cover;
-      background-blend-mode: lighten;
+    .input-style {
+      @apply bg-blue-100 w-full p-3 pl-10 rounded-xl text-gray-800 shadow-inner focus:outline-none;
+    }
+    .icon {
+      @apply absolute left-3 top-1/2 transform -translate-y-1/2 text-blue-600;
     }
   </style>
 </head>
-<body class="min-h-screen flex flex-col items-center px-4 py-8">
+<body class="min-h-screen flex items-center justify-center px-4">
 
-  <h1 class="text-4xl font-bold text-white drop-shadow mb-2">📚 Select Your Subject</h1>
-  <p class="text-xl text-white mb-6">🗓️ School Year: <span class="font-semibold"><?= $current_year ?></span></p>
+  <div class="bg-orange-100 rounded-[30px] shadow-2xl p-8 w-full max-w-md text-center">
+    <h1 class="text-3xl font-bold text-gray-800 mb-6">Welcome to CMS</h1>
 
-  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 w-full max-w-6xl">
-    <?php foreach ($subjects as $row): ?>
-     <div 
-        onclick="location.href='choose_role.php?subject_id=<?= $row['subject_id'] ?>&subject_name=<?= urlencode($row['subject_name']) ?>&class_name=<?= urlencode($row['class_name']) ?>&year_label=<?= urlencode($current_year) ?>'"
-        class="card cursor-pointer p-6 rounded-xl shadow-md border-4 border-yellow-300 hover:scale-105 transform transition-all duration-200 hover:border-blue-400"
-      >
-
-        <h2 class="text-2xl font-bold text-gray-800 mb-1"><?= htmlspecialchars($row['subject_name']) ?></h2>
-        <p class="text-gray-700 text-lg">📘 Section: <span class="font-semibold"><?= htmlspecialchars($row['class_name']) ?></span></p>
+    <!-- Login Form -->
+    <form method="POST" action="config/process_login.php" class="bg-white rounded-2xl p-6 shadow-md space-y-4">
+      <h2 class="text-xl font-semibold text-gray-700 mb-2">👩‍🏫 Teacher Login</h2>
+      
+      <!-- Username -->
+      <div class="relative">
+        <span class="icon">👤</span>
+        <input type="text" name="username" placeholder="Username" required class="input-style" autofocus>
       </div>
-    <?php endforeach; ?>
+
+      <!-- Password -->
+      <div class="relative">
+        <span class="icon">🔒</span>
+        <input type="password" name="password" placeholder="Password" required class="input-style">
+      </div>
+
+      <!-- Error Messages -->
+      <?php if (!empty($_SESSION['failed'])): ?>
+        <div class="bg-red-100 text-red-800 px-4 py-2 rounded mb-4">
+          <?= $_SESSION['failed']; unset($_SESSION['failed']); ?>
+        </div>
+      <?php endif; ?>
+      <?php if (!empty($_SESSION['error'])): ?>
+        <div class="bg-red-100 text-red-800 px-4 py-2 rounded mb-4">
+          <?= $_SESSION['error']; unset($_SESSION['error']); ?>
+        </div>
+      <?php endif; ?>
+
+      <!-- Login Button -->
+      <button type="submit" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-3 rounded-xl w-full transition">
+        Login as Teacher
+      </button>
+    </form>
+
+    <!-- OR Divider -->
+    <div class="my-4 text-gray-600 font-semibold">— or —</div>
+
+    <!-- Student Face Login -->
+    <a href="user/face_login.php" class="inline-block bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-xl transition shadow-md">
+      🎓 Face Login (Student)
+    </a>
   </div>
 
 </body>

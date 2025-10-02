@@ -72,7 +72,9 @@ $students = $result->fetch_all(MYSQLI_ASSOC);
       background-size: cover;
       background-position: center;
       font-family: 'Comic Sans MS', cursive, sans-serif;
+      
     }
+    
   </style>
 </head>
 <body class="px-6 py-8">

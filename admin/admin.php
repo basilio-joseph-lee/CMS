@@ -7,6 +7,21 @@ if ($conn->connect_error) {
   die("Connection failed: " . $conn->connect_error);
 }
 
+$sql = "SELECT school_year_id, year_label 
+        FROM school_years 
+        WHERE status = 'active' 
+        LIMIT 1";
+
+$result = $conn->query($sql);
+
+if ($result && $result->num_rows > 0) {
+    $activeSY = $result->fetch_assoc();
+    $ACTIVE_SY_ID = (int)$activeSY['school_year_id'];
+    $ACTIVE_SY_LABEL = $activeSY['year_label'];
+} else {
+    
+}
+
 // Determine page
 $page = $_GET['page'] ?? 'dashboard';
 
@@ -49,9 +64,10 @@ $populatedSection = $conn->query("
             <a href="admin.php?page=sections" class="block py-2 px-3 <?= $page === 'sections' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">🏫 Sections</a>
             <a href="admin.php?page=subjects" class="block py-2 px-3 <?= $page === 'subjects' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">📚 Subjects</a>
             <a href="admin.php?page=students" class="block py-2 px-3 <?= $page === 'students' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">🧑‍🎓 Students</a>
+            <a href="admin.php?page=set_schedule" class="block py-2 px-3 <?= $page === 'set_schedule' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">⏰ Set Schedule</a>
             <a href="admin.php?page=teachers" class="block py-2 px-3 <?= $page === 'teachers' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">👩‍🏫 Teachers</a>
             <a href="admin.php?page=parents" class="block py-2 px-3 <?= $page === 'parents' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">👪 Parents</a>
-            <a href="admin.php?page=enroll_student" class="block py-2 px-3 <?= $page === 'enroll_student' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">📝 Enroll Student</a>
+            <a href="admin.php?page=enroll_student" class="block py-2 px-3 <?= $page === 'enroll_student' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">📝 Assign Students</a>
             <a href="admin.php?page=grades" class="block py-2 px-3 <?= $page === 'grades' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">📊 Grades</a>
             <a href="admin.php?page=announcement" class="block py-2 px-3 <?= $page === 'announcement' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">📢 Announcement</a>
             <hr class="my-4 border-gray-600">
@@ -157,6 +173,12 @@ $populatedSection = $conn->query("
     <?php elseif ($page === 'announcement'): ?>
     <h2 class="text-2xl font-bold mb-4">📢 Announcements</h2>
     <?php include 'admin_views/announcement.php'; ?>
+
+    <?php elseif ($page === 'set_schedule'): ?>
+  <h2 class="text-2xl font-bold mb-4">⏰ Set Schedule &nbsp;<span class="text-gray-500 text-base">(SY: <?= htmlspecialchars($ACTIVE_SY_LABEL) ?>)</span></h2>
+  <?php include 'admin_views/set_schedule.php'; ?>
+
+    
 
 
 

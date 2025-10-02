@@ -7,6 +7,9 @@ $subject_id = $_SESSION['subject_id'] ?? null;
 $advisory_id = $_SESSION['advisory_id'] ?? null;
 $school_year_id = $_SESSION['school_year_id'] ?? null;
 
+
+
+
 if ($subject_id && $advisory_id && $school_year_id):
     $quarter = $_GET['quarter'] ?? '1st';
 
@@ -49,6 +52,17 @@ if ($subject_id && $advisory_id && $school_year_id):
     while ($row = $grade_res->fetch_assoc()) {
         $quarter_grades[$row['student_id']] = $row;
     }
+
+    // Check if portal is open for this quarter
+$portal_open = false;
+$check = $conn->prepare("SELECT status FROM grading_portals WHERE school_year_id = ? AND quarter = ?");
+$check->bind_param("is", $school_year_id, $quarter);
+$check->execute();
+$portal_res = $check->get_result();
+if ($row = $portal_res->fetch_assoc()) {
+    $portal_open = ($row['status'] === 'open');
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -72,14 +86,25 @@ if ($subject_id && $advisory_id && $school_year_id):
   </style>
 </head>
 <body class="p-6">
-<?php if (isset($_GET['success'])): ?>
-  <div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-xl shadow-xl z-50">
-    ✅ Grades saved successfully!
+  <!-- <?php if (!$portal_open): ?>
+  <div class="fixed top-4 right-4 bg-red-500 text-white px-6 py-3 rounded-xl shadow-xl z-50">
+    🚫 This grading portal is currently closed. Publishing is disabled.
+  </div>
+  <script>
+    setTimeout(() => document.querySelector('.fixed.bg-red-500')?.remove(), 4000);
+  </script>
+<?php endif; ?> -->
+
+<?php if (isset($_GET['success']) || isset($_GET['published'])): ?>
+  <div class="fixed top-4 right-4 px-6 py-3 rounded-xl shadow-xl z-50
+              <?= isset($_GET['success']) ? 'bg-green-500' : 'bg-green-600' ?> text-white">
+    <?= isset($_GET['success']) ? '✅ Grades saved successfully!' : '🚀 Grades published to portal!' ?>
   </div>
   <script>
     setTimeout(() => document.querySelector('.fixed.top-4.right-4')?.remove(), 3000);
   </script>
 <?php endif; ?>
+
 
 <div class="max-w-7xl mx-auto bg-[#fffbea] p-10 rounded-3xl shadow-2xl ring-4 ring-yellow-300">
   <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
@@ -205,11 +230,24 @@ if ($subject_id && $advisory_id && $school_year_id):
       </table>
     </div>
 
-    <div class="text-center">
-      <button type="submit" class="bg-green-500 hover:bg-green-600 text-white px-10 py-3 text-lg rounded-xl shadow-lg">
-        💾 Save All Grades
-      </button>
-    </div>
+<!-- Inside the form footer -->
+<div class="text-center flex gap-4 justify-center mt-6">
+  <button type="submit" name="save_draft" class="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg">
+    💾 Save Draft
+  </button>
+
+  <?php if ($portal_open): ?>
+    <button type="submit" name="publish" class="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg shadow-lg">
+      🚀 Publish to Portal
+    </button>
+  <?php else: ?>
+    <button type="button" disabled class="bg-gray-400 text-white px-6 py-3 rounded-lg shadow-lg cursor-not-allowed">
+      🚫 Portal Closed
+    </button>
+  <?php endif; ?>
+</div>
+
+
   </form>
 </div>
 </body>

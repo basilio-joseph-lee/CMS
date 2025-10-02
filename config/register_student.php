@@ -1,7 +1,7 @@
 <?php
 session_start();
 if (!isset($_SESSION['teacher_id'])) {
-  header("Location: teacher_login.php");
+  header("Location: /CMS/user/teacher_login.php");
   exit;
 }
 
@@ -9,56 +9,105 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   die("Invalid request method.");
 }
 
-// DB connection
+/* ---------- DB connection ---------- */
 $conn = new mysqli("localhost", "root", "", "cms");
 if ($conn->connect_error) {
   die("Connection failed: " . $conn->connect_error);
 }
 
-// Get form data
-$fullname = trim($_POST['fullname'] ?? '');
-$gender = $_POST['gender'] ?? '';
-$face_image = $_POST['captured_face'] ?? '';
+/* ---------- Paths: filesystem vs public URLs ---------- */
+/* Filesystem root of the CMS project (…/CMS) */
+$PROJECT_ROOT = realpath(__DIR__ . '/..');              // e.g., C:\xampp\htdocs\CMS
+$PUBLIC_BASE  = '/CMS';                                 // public URL base
 
-// Get subject/section/year from session
-$school_year_id = $_SESSION['school_year_id'] ?? '';
-$advisory_id = $_SESSION['advisory_id'] ?? '';
-$subject_id = $_SESSION['subject_id'] ?? '';
+$facesDirFs   = $PROJECT_ROOT . '/student_faces';       // FS path for faces
+$facesDirUrl  = $PUBLIC_BASE . '/student_faces';        // public URL to faces
 
-$teacherName = $_SESSION['fullname'] ?? '';
-$subjectName = $_SESSION['subject_name'] ?? '';
-$className = $_SESSION['class_name'] ?? '';
-$yearLabel = $_SESSION['year_label'] ?? '';
+$avatarDirFs  = $PROJECT_ROOT . '/avatar';              // FS path where your stock avatars live
+$avatarDirUrl = $PUBLIC_BASE . '/avatar';               // public URL to avatars
 
-if (!$fullname || !$gender || !$school_year_id || !$advisory_id || !$subject_id || !$face_image) {
+/* ---------- Read form ---------- */
+$fullname     = trim($_POST['fullname'] ?? '');
+$gender       = $_POST['gender'] ?? '';
+$capturedFace = $_POST['captured_face'] ?? '';          // data URL (optional)
+$chosenAvatar = $_POST['avatar_path'] ?? '';            // e.g. /CMS/avatar/M-Blue-Polo.jpg (optional)
+
+/* From session */
+$school_year_id = intval($_SESSION['school_year_id'] ?? 0);
+$advisory_id    = intval($_SESSION['advisory_id'] ?? 0);
+$subject_id     = intval($_SESSION['subject_id'] ?? 0);
+
+if (!$fullname || !$gender || !$school_year_id || !$advisory_id || !$subject_id) {
   die("Missing required fields.");
 }
 
-// Save face image
-$face_image = str_replace('data:image/jpeg;base64,', '', $face_image);
-$face_image = base64_decode($face_image);
-$face_filename = 'student_faces/' . uniqid('face_') . '.jpg';
-
-if (!file_exists('student_faces')) {
-  mkdir('student_faces', 0777, true);
+/* Require at least one: avatar OR captured face */
+if ($capturedFace === '' && $chosenAvatar === '') {
+  $_SESSION['toast'] = "Please choose a 2D avatar or capture a face.";
+  $_SESSION['toast_type'] = "error";
+  header("Location: /CMS/user/add_student.php");
+  exit;
 }
-file_put_contents($face_filename, $face_image);
-$avatar_filename = 'student_avatars/' . uniqid('avatar_') . '.png'; // or .jpg if your default is .jpg
-copy('../img/default.png', $avatar_filename); // ✅ Copy default avatar into the folder
 
+/* ---------- Normalize and validate avatar path (if provided) ---------- */
+$avatar_path_db = null;
+if ($chosenAvatar !== '') {
+  // Expect something like /CMS/avatar/FILE
+  // Keep only the filename to avoid traversal
+  $avatarFile = basename($chosenAvatar);
+  $candidateFs = $avatarDirFs . DIRECTORY_SEPARATOR . $avatarFile;
 
-// Run cartoonify.py
-//$command = escapeshellcmd("python cartoonify.py $face_filename $avatar_filename");
-//$output = shell_exec($command);
+  if (!is_file($candidateFs)) {
+    // Fallback: also try if user sent a relative like 'M-Blue-Polo.jpg'
+    $candidateFs2 = $avatarDirFs . DIRECTORY_SEPARATOR . basename($chosenAvatar);
+    if (!is_file($candidateFs2)) {
+      $_SESSION['toast'] = "Selected avatar not found.";
+      $_SESSION['toast_type'] = "error";
+      header("Location: /CMS/user/add_student.php");
+      exit;
+    }
+    $candidateFs = $candidateFs2;
+    $avatarFile  = basename($candidateFs2);
+  }
+  // Public URL to store in DB
+  $avatar_path_db = $avatarDirUrl . '/' . $avatarFile;
+}
 
-// If failed
-//if (strpos($output, 'OK') === false) {
-//  echo "⚠️ Avatar cartoonify failed. Output: " . htmlspecialchars($output);
-//  exit;
-//}
+/* ---------- Save captured face (if provided) ---------- */
+$face_image_path_db = null;
+if ($capturedFace !== '') {
+  // Expect "data:image/jpeg;base64,...."
+  if (strpos($capturedFace, 'base64,') !== false) {
+    $base64 = substr($capturedFace, strpos($capturedFace, 'base64,') + 7);
+  } else {
+    $base64 = $capturedFace; // be permissive
+  }
+  $binary = base64_decode($base64, true);
+  if ($binary === false) {
+    $_SESSION['toast'] = "Invalid captured image data.";
+    $_SESSION['toast_type'] = "error";
+    header("Location: /CMS/user/add_student.php");
+    exit;
+  }
 
-// 1. Check if student with same face image OR fullname already exists under the same subject/section/year
-$check_stmt = $conn->prepare("
+  if (!is_dir($facesDirFs)) {
+    @mkdir($facesDirFs, 0777, true);
+  }
+
+  $faceFileName = 'face_' . uniqid() . '.jpg';
+  $faceFs = $facesDirFs . DIRECTORY_SEPARATOR . $faceFileName;
+  if (file_put_contents($faceFs, $binary) === false) {
+    $_SESSION['toast'] = "Failed to save captured face.";
+    $_SESSION['toast_type'] = "error";
+    header("Location: /CMS/user/add_student.php");
+    exit;
+  }
+  // Public URL to store in DB
+  $face_image_path_db = $facesDirUrl . '/' . $faceFileName;
+}
+
+/* ---------- Duplicate check: same fullname within same (SY, advisory, subject) ---------- */
+$check_sql = "
   SELECT s.student_id
   FROM students s
   JOIN student_enrollments se ON s.student_id = se.student_id
@@ -66,23 +115,33 @@ $check_stmt = $conn->prepare("
     AND se.school_year_id = ?
     AND se.advisory_id = ?
     AND se.subject_id = ?
-");
+  LIMIT 1
+";
+$check_stmt = $conn->prepare($check_sql);
 $check_stmt->bind_param("siii", $fullname, $school_year_id, $advisory_id, $subject_id);
 $check_stmt->execute();
 $check_stmt->store_result();
 
 if ($check_stmt->num_rows > 0) {
+  $check_stmt->close();
   $_SESSION['toast'] = "⚠️ Student already exists in this subject, section and school year.";
   $_SESSION['toast_type'] = "error";
-  header("Location: ../user/add_student.php");
+  header("Location: /CMS/user/add_student.php");
   exit;
 }
 $check_stmt->close();
 
-
-// Insert student record
-$stmt = $conn->prepare("INSERT INTO students (fullname, gender, face_image_path, avatar_path) VALUES (?, ?, ?, ?)");
-$stmt->bind_param("ssss", $fullname, $gender, $face_filename, $avatar_filename);
+/* ---------- Insert student ---------- */
+/* Ensure your table has columns: fullname, gender, face_image_path (NULL ok), avatar_path (NULL ok) */
+$insert_sql = "INSERT INTO students (fullname, gender, face_image_path, avatar_path) VALUES (?, ?, ?, ?)";
+$stmt = $conn->prepare($insert_sql);
+$stmt->bind_param(
+  "ssss",
+  $fullname,
+  $gender,
+  $face_image_path_db,  // can be null
+  $avatar_path_db       // can be null
+);
 
 if ($stmt->execute()) {
   $student_id = $conn->insert_id;
@@ -93,12 +152,9 @@ if ($stmt->execute()) {
   $enroll_stmt->execute();
   $enroll_stmt->close();
 
-  // Optional: success message via toast
   $_SESSION['toast'] = "✅ Student added successfully!";
   $_SESSION['toast_type'] = "success";
-
-  // Return to add student page with subject/session still intact
-  header("Location: ../user/add_student.php");
+  header("Location: /CMS/user/add_student.php");
   exit;
 } else {
   echo "❌ Failed to register student: " . $stmt->error;
