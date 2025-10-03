@@ -3,7 +3,7 @@ name: Deploy to Hostinger
 on:
   push:
     branches:
-      - main   # or the branch you push changes to
+      - main
 
 jobs:
   ftp-deploy:
@@ -19,5 +19,5 @@ jobs:
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
           port: ${{ secrets.FTP_PORT }}
-          local-dir: ./   # this is your repo root (where index.php is)
-          server-dir: public_html/  # Hostinger default web root
+          local-dir: ./      # repo root
+          server-dir: public_html/
