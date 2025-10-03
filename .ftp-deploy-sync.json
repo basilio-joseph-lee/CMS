@@ -1,7 +1,6 @@
-{
-  "exclude": [
-    "**/.git*",
-    "**/.github*",
-    "**/README.md"
-  ]
-}
+"exclude": [
+  "**/.git*",
+  "**/.github*",
+  "node_modules/**",
+  "**/README.md"
+]
