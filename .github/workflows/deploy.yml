@@ -2,15 +2,13 @@ name: Deploy to Hostinger
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
 
 jobs:
   ftp-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Deploy via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -19,5 +17,7 @@ jobs:
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
           port: ${{ secrets.FTP_PORT }}
-          local-dir: ./      # repo root
-          server-dir: public_html/
+          local-dir: ./
+          server-dir: /public_html/         # absolute path
+          log-level: verbose                # show 'Remote dir' and files uploaded
+          dangerous-clean-slate: true       # wipe target before upload
