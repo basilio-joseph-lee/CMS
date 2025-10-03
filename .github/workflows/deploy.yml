@@ -11,13 +11,31 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Deploy via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          server: ${{ secrets.FTP_HOST }}
+          server:   ${{ secrets.FTP_HOST }}    # e.g. ftp://185.232.14.135 or ftp.yourdomain.com
           username: ${{ secrets.FTP_USER }}
           password: ${{ secrets.FTP_PASS }}
-          port: ${{ secrets.FTP_PORT }}
+          port:     ${{ secrets.FTP_PORT }}    # 21 on your screenshot
+          protocol: ftps                       # encrypted
+          timeout:  60000
+
+          # Your FTP home IS public_html, so "/" == public_html
+          server-dir: /                        # ← THIS is the key change
+
+          # Repo root contains the code
           local-dir: ./
-          server-dir: /public_html/         # absolute path
-          log-level: verbose                # show 'Remote dir' and files uploaded
-          dangerous-clean-slate: true       # wipe target before upload
+
+          log-level: verbose
+
+          # Turn ON for the first fixed deploy; turn OFF afterwards
+          dangerous-clean-slate: true
+
+          exclude:
+            - .git*
+            - .github/**
+            - node_modules/**          # not needed for native PHP
+            - **/.DS_Store
+            - **/README.md
+          include:
+            - .htaccess
