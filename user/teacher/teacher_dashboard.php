@@ -1,9 +1,11 @@
 <?php
+
+
 session_start();
-if (!isset($_SESSION['teacher_id'])) {
-  header("Location: teacher_login.php");
-  exit;
-}
+
+include '../../config/teacher_guard.php';
+include "../../config/db.php";
+
 
 $teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
 $subjectName = $_SESSION['subject_name'] ?? '';
@@ -20,7 +22,7 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
   <style>
     /* ======== Your original CSS kept ======== */
     body {
-      background-image: url('../img/1.png');
+      background-image: url('../../img/1.png');
       background-size: cover;
       background-position: center;
       font-family: 'Comic Sans MS', cursive, sans-serif;
@@ -121,7 +123,7 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
     <div class="flex sm:justify-end">
 
         <a
-          href="../config/logout.php?role=teacher"
+          href="../../config/logout.php?role=teacher"
           class="inline-flex items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm sm:text-base font-semibold shadow-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-300 transition"
         >
           Logout
@@ -139,42 +141,42 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
       </div>
     </a>
 
-    <a href="teacher/view_students.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
+    <a href="view_students.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
       <div class="card">
         <div class="card-icon">👦</div>
         <div class="font-bold text-sm sm:text-base">View Students</div>
       </div>
     </a>
 
-    <a href="teacher/view_attendance_history.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
+    <a href="view_attendance_history.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
       <div class="card bg-blue-100">
         <div class="card-icon">📅</div>
         <div class="font-bold text-xs sm:text-sm md:text-base">View Attendance History</div>
       </div>
     </a>
 
-    <a href="teacher/grading_sheet.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
+    <a href="grading_sheet.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
       <div class="card">
         <div class="card-icon">📖</div>
         <div class="font-bold text-sm sm:text-base">Grades</div>
       </div>
     </a>
 
-    <a href="teacher/mark_attendance.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
+    <a href="mark_attendance.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
       <div class="card bg-blue-100">
         <div class="card-icon">🗓️</div>
         <div class="font-bold text-sm sm:text-base">Mark Attendance</div>
       </div>
     </a>
 
-    <a href="teacher/announcement.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
+    <a href="announcement.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
       <div class="card">
         <div class="card-icon">📢</div>
         <div class="font-bold text-sm sm:text-base">Post Announcement</div>
       </div>
     </a>
 
-    <a href="teacher/classroom_simulator.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
+    <a href="classroom_simulator.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
       <div class="card bg-pink-100">
         <div class="card-icon">🪑</div>
         <div class="font-bold text-sm sm:text-base">Seating Plan</div>
@@ -182,7 +184,7 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
     </a>
 
         <!-- NEW: Quiz Game (Create & Publish) -->
-    <a href="teacher/quiz_dashboard.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
+    <a href="quiz_dashboard.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
       <div class="card bg-green-100">
         <div class="card-icon">❓</div>
         <div class="font-bold text-sm sm:text-base">Quiz Game</div>

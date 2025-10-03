@@ -31,9 +31,10 @@ $correct_opt    = $_POST['correct_opt'] ?? 'A';
 $time_limit_sec = max(10, min(300, intval($_POST['time_limit_sec'] ?? 30)));
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+include("db.php");
 
 try {
-  $conn = new mysqli("localhost", "root", "", "cms");
+
   $conn->set_charset('utf8mb4');
 
   // add order_hint column if missing

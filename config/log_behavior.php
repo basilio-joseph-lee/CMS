@@ -40,7 +40,7 @@ if ($action_type === 'attendance' && !in_array($status, $valid_status, true)) {
   exit;
 }
 
-$conn = new mysqli("localhost", "root", "", "cms");
+include("db.php");
 if ($conn->connect_error) {
   echo json_encode(['success' => false, 'message' => 'DB connection failed']);
   exit;

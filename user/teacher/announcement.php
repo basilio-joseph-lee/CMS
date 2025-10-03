@@ -1,9 +1,8 @@
 <?php
 session_start();
-if (!isset($_SESSION['teacher_id'])) {
-  header("Location: teacher_login.php");
-  exit;
-}
+include '../../config/teacher_guard.php';
+include '../../config/db.php';
+
 
 $teacher_id = $_SESSION['teacher_id'];
 $subject_id = $_SESSION['subject_id'];
@@ -13,9 +12,9 @@ $school_year_id = $_SESSION['school_year_id'];
 $subject_name = $_SESSION['subject_name'];
 $class_name = $_SESSION['class_name'];
 $year_label = $_SESSION['year_label'];
-$teacherName = $_SESSION['fullname'];
+$teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
 
-$conn = new mysqli("localhost", "root", "", "cms");
+
 if ($conn->connect_error) {
   die("Connection failed: " . $conn->connect_error);
 }
@@ -112,7 +111,7 @@ $res = $conn->query("SELECT a.*, s.subject_name, c.class_name FROM announcements
     </div>
     <div class="space-x-4">
       <button onclick="openAddModal()" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl shadow">+ Add</button>
-      <a href="../teacher_dashboard.php" class="bg-orange-400 hover:bg-orange-500 text-white text-lg font-bold px-6 py-2 rounded-lg shadow-md">← Back</a>
+      <a href="teacher_dashboard.php" class="bg-orange-400 hover:bg-orange-500 text-white text-lg font-bold px-6 py-2 rounded-lg shadow-md">← Back</a>
     </div>
   </div>
 

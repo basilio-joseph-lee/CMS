@@ -4,7 +4,7 @@ header("Access-Control-Allow-Headers: Content-Type");
 header("Access-Control-Allow-Methods: POST");
 header("Content-Type: application/json");
 
-$conn = new mysqli("localhost", "root", "", "cms");
+include("db.php");
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
   echo json_encode(["error" => "Invalid request method"]);

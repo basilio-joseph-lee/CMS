@@ -3,6 +3,7 @@
 // Name-based: serve FIRST published question that THIS name hasn't answered yet.
 // IMPORTANT: Only deliver a question when the session is **ongoing**.
 // Otherwise (draft/active/ended) return quiz=null so clients stay in the lobby.
+include("db.php");
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -16,7 +17,7 @@ if ($player === '')   { echo json_encode(['success'=>false,'error'=>'Missing pla
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 try {
-  $conn = new mysqli("localhost","root","","cms");
+
   $conn->set_charset('utf8mb4');
 
   // 1) Load session FIRST (bug fix: don't touch $sess before this)

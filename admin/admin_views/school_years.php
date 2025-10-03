@@ -1,6 +1,6 @@
 <?php
 // You may eventually move these queries to config/logic files
-
+include("../config/db.php");
 // Handle Add School Year
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['year_label'])) {
   $yearLabel = trim($_POST['year_label']);

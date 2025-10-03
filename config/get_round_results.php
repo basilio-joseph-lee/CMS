@@ -2,6 +2,8 @@
 // config/get_round_results.php
 session_start();
 header('Content-Type: application/json');
+include("db.php");
+
 
 $subject_id = (int)($_SESSION['active_subject_id']  ?? $_SESSION['subject_id']     ?? 0);
 $advisory_id= (int)($_SESSION['active_advisory_id'] ?? $_SESSION['advisory_id']    ?? 0);
@@ -15,12 +17,12 @@ if (!$subject_id || !$advisory_id || !$sy_id) {
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
-  $db = new mysqli('localhost','root','','cms');
-  $db->set_charset('utf8mb4');
+  $conn = new mysqli('localhost','root','','cms');
+  $conn->set_charset('utf8mb4');
 
   // If no question_id provided, get latest CLOSED today for this slot
   if (!$qid) {
-    $stmt = $db->prepare("
+    $stmt = $conn->prepare("
       SELECT question_id
         FROM kiosk_quiz_questions
        WHERE subject_id=? AND advisory_id=? AND school_year_id=?
@@ -37,7 +39,7 @@ try {
   }
 
   // Pull top 10
-  $stmt = $db->prepare("
+  $stmt = $conn->prepare("
     SELECT r.student_id, s.fullname, s.avatar_path,
            r.chosen_opt, r.is_correct, r.points, r.time_ms, r.answered_at
       FROM kiosk_quiz_responses r

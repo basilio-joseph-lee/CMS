@@ -10,7 +10,7 @@ $school_year_id = (int)$_SESSION['school_year_id'];
 
 $quiz_id = isset($_GET['quiz_id']) ? (int)$_GET['quiz_id'] : 0;
 
-$conn = new mysqli("localhost","root","","cms");
+include("db.php");
 $conn->set_charset('utf8mb4');
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);

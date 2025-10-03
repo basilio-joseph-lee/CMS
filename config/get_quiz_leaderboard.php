@@ -2,6 +2,7 @@
 // config/get_quiz_leaderboard.php
 session_start();
 header('Content-Type: application/json');
+include("db.php");
 
 if (!isset($_SESSION['teacher_id']) && !isset($_SESSION['student_id'])) {
   echo json_encode(['success'=>false,'message'=>'Unauthorized']); exit;
@@ -15,7 +16,7 @@ $question_id = isset($_GET['question_id']) ? intval($_GET['question_id']) : 0;
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
-  $conn = new mysqli("localhost", "root", "", "cms");
+
   $conn->set_charset('utf8mb4');
 
   // If no question_id given, pull the most recently CLOSED one for this slot.

@@ -14,7 +14,7 @@ $advisory_id    = (int)$_SESSION['advisory_id'];
 $school_year_id = (int)$_SESSION['school_year_id'];
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-$conn = new mysqli("localhost","root","","cms");
+include("db.php");
 $conn->set_charset('utf8mb4');
 
 // --- helpers ---

@@ -13,7 +13,7 @@ $imageData = str_replace('data:image/jpeg;base64,', '', $imageData);
 $imageBlob = base64_decode($imageData);
 
 // Connect to MySQL
-$conn = new mysqli("localhost", "root", "", "test"); // Replace DB name
+include("db.php"); // Replace DB name
 if ($conn->connect_error) {
     echo json_encode(['success' => false, 'error' => 'DB connection failed']);
     exit;

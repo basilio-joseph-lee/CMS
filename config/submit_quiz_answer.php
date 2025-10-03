@@ -4,6 +4,7 @@
 
 header('Content-Type: application/json; charset=utf-8');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+include("db.php");
 
 $question_id = (int)($_POST['question_id'] ?? 0);
 $chosen_opt  = strtoupper(trim($_POST['chosen_opt'] ?? ''));
@@ -15,7 +16,7 @@ if ($question_id<=0 || !in_array($chosen_opt, ['A','B','C','D'], true) || $name=
 }
 
 try{
-  $conn = new mysqli("localhost","root","","cms");
+
   $conn->set_charset('utf8mb4');
 
   // Fetch correct answer and simple points rule

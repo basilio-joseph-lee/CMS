@@ -1,6 +1,8 @@
 <?php
 // /CMS/user/teacher/quiz_dashboard.php
 session_start();
+include '../../config/teacher_guard.php';
+include "../../config/db.php";
 if (!isset($_SESSION['teacher_id'])) { header("Location: ../teacher_login.php"); exit; }
 
 $teacher_id     = (int)$_SESSION['teacher_id'];
@@ -9,7 +11,7 @@ $advisory_id    = (int)$_SESSION['advisory_id'];
 $school_year_id = (int)$_SESSION['school_year_id'];
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-$conn = new mysqli("localhost","root","","cms");
+
 $conn->set_charset('utf8mb4');
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
@@ -110,7 +112,7 @@ $base = "http://".$_SERVER['HTTP_HOST'].dirname($_SERVER['PHP_SELF']);
   <div class="toolbar">
     <a class="btn primary" href="quiz_setup.php">➕ New Quiz</a>
     <button id="btnPublishAll" class="btn">🚀 Publish All Drafts</button>
-    <a class="btn dark" href="../teacher_dashboard.php">Back to Dashboard</a>
+    <a class="btn dark" href="teacher_dashboard.php">Back to Dashboard</a>
   </div>
 
   <div class="grid">

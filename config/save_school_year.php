@@ -8,7 +8,7 @@ $teacherId = $_SESSION['teacher_id'];
 $teacherName = $_SESSION['fullname'];
 
 // DB connect
-$conn = new mysqli("localhost", "root", "", "cms");
+include("db.php");
 if ($conn->connect_error) {
   die("Connection failed: " . $conn->connect_error);
 }

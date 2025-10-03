@@ -1,5 +1,7 @@
 <?php
 // /CMS/config/close_quiz.php
+
+include("db.php");
 session_start();
 
 $ajax = isset($_POST['ajax']) || isset($_GET['ajax']);

@@ -1,9 +1,8 @@
 <?php
 include "../../config/db.php";
-session_start();
-if (!isset($_SESSION['teacher_id'])) { header("Location: teacher_login.php"); exit; }
+include '../../config/teacher_guard.php';
 
-$teacherName    = $_SESSION['fullname'];
+$teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
 $subject_id     = intval($_SESSION['subject_id']);
 $advisory_id    = intval($_SESSION['advisory_id']);
 $school_year_id = intval($_SESSION['school_year_id']);
@@ -162,7 +161,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   /* Hide avatar completely when away but keep the status bubble visible */
 .seat.is-away .avatar-img{ display:none; }
 /* OPTIONAL: soften the name when away */
-.seat.is-away + .name { opacity:.5; }
+.seat.is-away .name { opacity:.5; }
 
 
   /* Modal */
@@ -179,6 +178,11 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   .style-btn.active{ outline:2px solid #facc15; background:#fff; color:#111827; }
   .swatch{ width:22px; height:22px; border-radius:.35rem; border:1px solid #0f172a22; }
   .grid-auto{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:.6rem; }
+
+  .is-locked { pointer-events: none; }
+.is-locked .seat { cursor: not-allowed !important; }
+
+
 </style>
 </head>
 <body>
@@ -386,6 +390,8 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 </div>
 
 <script>
+
+  
 function modeText(){ return mode==='quiz'?'✏️':mode==='discussion'?'📖':''; }
 function actionOverlayText(){ return globalAction==='break'?'🍱':globalAction==='out'?'🚪':''; }
 function actionText(act){
@@ -409,8 +415,11 @@ const backBtn    = document.getElementById('backBtn');
 const COLOR_KEY  = `sim:chairColor:${SY}:${AD}:${SJ}`;
 const SHAPE_KEY  = `sim:chairShape:${SY}:${AD}:${SJ}`;
 const BACK_KEY   = `sim:backSet:${SY}:${AD}:${SJ}`;
+const LOCK_KEY   = `sim:arrangementLock:${SY}:${AD}:${SJ}`;
+const MODE_KEY   = `sim:mode:${SY}:${AD}:${SJ}`;
 
-let mode = null;            // visual only
+
+let mode = localStorage.getItem(MODE_KEY) || null;  // restore last mode if any
 let globalAction = null;    // 'break'|'out' overlay + logs
 let students = [];          // roster
 let seats    = [];          // seats with coords
@@ -433,20 +442,45 @@ function toast(msg, type='success'){
 }
 function clamp(v, min, max){ return Math.max(min, Math.min(max, v)); }
 function saveBackSet(){ localStorage.setItem(BACK_KEY, JSON.stringify([...backSet])); }
-function markStudentBack(id){ backSet.add(String(id)); saveBackSet(); renderSeats(); }
-function markStudentAway(id){ backSet.delete(String(id)); saveBackSet(); renderSeats(); }
+function markStudentBack(id){ 
+  backSet.add(String(id)); 
+  saveBackSet(); 
+  updateSeatStates(); 
+}
+function markStudentAway(id){ 
+  backSet.delete(String(id)); 
+  saveBackSet(); 
+  updateSeatStates(); 
+}
 function clearBackSet(){ backSet.clear(); saveBackSet(); }
 
 /* ---------- Modes (visual only) ---------- */
 document.querySelectorAll('[data-mode]').forEach(btn=>{
-  btn.onclick = ()=>{ const m=btn.dataset.mode; mode=(mode===m)?null:m; renderSeats(); refreshBehavior(); };
+  btn.onclick = ()=>{
+    const m = btn.dataset.mode;
+    mode = (mode===m) ? null : m;   // toggle
+    if (mode) {
+      localStorage.setItem(MODE_KEY, mode);
+    } else {
+      localStorage.removeItem(MODE_KEY);
+    }
+    updateSeatStates();
+  };
 });
+
 
 /* ---------- Actions (overlay + bulk logs) ---------- */
 document.querySelectorAll('[data-action]').forEach(btn=>{
   btn.onclick = async ()=>{
     const kind = btn.dataset.action; // 'break'|'out'
-    if (globalAction === kind){ globalAction=null; clearBackSet(); renderSeats(); refreshBehavior(); return; }
+   if (globalAction === kind){
+  globalAction = null;
+  clearBackSet();
+  updateSeatStates();   // ← no DOM rebuild, di mare-reset ang animation
+  refreshBehavior();
+  return;
+}
+
 
     const student_ids = students.map(s=>s.student_id);
     const action_type = (kind==='break') ? 'lunch_break' : 'out_time';
@@ -459,7 +493,7 @@ document.querySelectorAll('[data-action]').forEach(btn=>{
       const raw = await resp.text(); let r; try{ r=JSON.parse(raw);}catch{ throw new Error('Bulk API returned non-JSON: '+raw.slice(0,120));}
       if (!r?.ok) throw new Error(r?.message || 'Bulk log failed');
       toast(`${kind==='break'?'Break Time':'Out Time'} logged for ${r.inserted ?? student_ids.length} students`);
-      globalAction = kind; clearBackSet(); renderSeats(); refreshBehavior();
+      globalAction = kind; clearBackSet(); updateSeatStates(); saveSeating(true);
     }catch(e){ toast(String(e.message||e),'error'); } finally{ btn.disabled=false; }
   };
 });
@@ -518,7 +552,7 @@ async function loadData(){
 
   if(seats.length===0){ const pos=placeGrid25(10); seats=pos.map((p,i)=>({seat_no:i+1,student_id:null,x:p.x,y:p.y})); }
 
-  renderSeats(); renderStats(); saveSeating(); await refreshBehavior();
+  renderSeats(); renderStats(); saveSeating(true); await refreshBehavior();
 }
 function normalizeSeating(raw){
   if(!raw) return [];
@@ -555,12 +589,13 @@ async function refreshStudents(){
     seats.forEach(s=>{ if(s.student_id!=null && !newIds.has(s.student_id)) s.student_id=null; });
     students=newList;
     autoAssignUnseated();
-    renderSeats(); renderStats(); saveSeating();
+    renderSeats(); renderStats(); saveSeating(true);
   }catch(e){ /* ignore */ }
 }
 
 /* ---------- Layout apply ---------- */
 function applyLayout(kind){
+  if (arrangementLocked) { toast('Unlock to change layout','error'); return; }
   const assigned=seats.filter(s=>s.student_id!=null).map(s=>s.student_id);
   let positions; switch(kind){
     case 'pairs': positions=placePairs(12); break;
@@ -572,7 +607,7 @@ function applyLayout(kind){
   }
   if(assigned.length>positions.length){ toast(`Layout has ${positions.length} chairs but you have ${assigned.length} seated students. Remove/unassign some first.`,'error'); return; }
   seats=positions.map((p,i)=>({seat_no:i+1,student_id:assigned[i]||null,x:p.x,y:p.y}));
-  renderSeats(); renderStats(); saveSeating();
+  renderSeats(); renderStats(); saveSeating(true);
 }
 
 /* ---------- Rendering ---------- */
@@ -605,11 +640,17 @@ function renderSeats(){
             <div class="avatar-bias ${biasClass}">
               <img src="${img}" class="avatar-img" style="--headDur:${(2.4+Math.random()*1.4).toFixed(2)}s;animation-delay:${(Math.random()*1.8).toFixed(2)}s;">
             </div>
-            ${(()=>{
-              const txt = overlayApplies ? actionOverlayText() : individuallyAway ? actionText(actionKey, st?.label) : modeText();
-              const cls = (overlayApplies || individuallyAway) ? 'status-bubble status-bubble--action' : 'status-bubble status-bubble--mode';
-              return txt ? `<div class="${cls}">${txt}</div>` : '';
-            })()}
+${(()=>{
+  const txt   = overlayApplies ? actionOverlayText()
+               : individuallyAway ? actionText(actionKey, st?.label)
+               : modeText();
+  const cls   = (overlayApplies || individuallyAway)
+               ? 'status-bubble status-bubble--action'
+               : 'status-bubble status-bubble--mode';
+  const style = txt ? '' : 'style="display:none"';
+  return `<div class="${cls}" ${style}>${txt||''}</div>`;
+})()}
+
           </div>`:``}
         <div class="desk-rect"></div>
         <div class="chair-back"></div>
@@ -630,6 +671,38 @@ function renderStats(){
   seatCountEl.textContent = seats.length;
 }
 
+function updateSeatStates(){
+  seatLayer.querySelectorAll('.seat').forEach((node)=>{
+    const seatNo = parseInt(node.dataset.seatNo,10);
+    const seat   = seats.find(s=>s.seat_no===seatNo);
+    const sid    = seat?.student_id;
+    const s      = students.find(x=>x.student_id==sid);
+    const hasStudent = !!s;
+
+    const st = hasStudent ? behaviorMap[String(s.student_id)] : null;
+    const actionKey = st ? String(st.action||'').toLowerCase() : '';
+
+    const individuallyAway = !!(st && (st.is_away || AWAY_ACTIONS.has(actionKey)));
+    const overlayApplies   = false; // wala tayong globalAction dito sa simplified file
+    const isAway = overlayApplies || individuallyAway;
+
+    node.classList.toggle('is-away', isAway);
+
+    const bubble = node.querySelector('.status-bubble');
+    if (bubble){
+      const txt = overlayApplies ? actionOverlayText()
+                 : individuallyAway ? actionText(actionKey, st?.label)
+                 : modeText();
+      bubble.textContent = txt || '';
+      bubble.style.display = txt ? '' : 'none';
+      bubble.classList.toggle('status-bubble--action', (overlayApplies || individuallyAway));
+      bubble.classList.toggle('status-bubble--mode', !(overlayApplies || individuallyAway));
+    }
+  });
+}
+
+
+
 /* ---------- Behavior refresh ---------- */
 async function refreshBehavior(){
   try{
@@ -641,7 +714,7 @@ async function refreshBehavior(){
       const act=String(row.action_type||'').toLowerCase();
       behaviorMap[String(row.student_id)]={ action:act, label:ACTION_LABELS[act]||row.label||'', is_away:AWAY_ACTIONS.has(act), timestamp:row.timestamp };
     });}
-    renderSeats();
+    updateSeatStates(); // <<< lightweight update, no DOM rebuild
   }catch(e){ console.error('refreshBehavior error:',e); }
 }
 
@@ -686,6 +759,8 @@ function bindMenus(){
 
 /* ---------- Dragging ---------- */
 function enableDragging(){
+  if (arrangementLocked) return; // huwag magbind ng handlers kapag locked
+
   function attachDrag(el,onDrop){
     let dragging=false,dX=0,dY=0;
     function down(e){ dragging=true; el.classList.add('dragging'); const p=(e.touches?e.touches[0]:e); const rect=el.getBoundingClientRect(); dX=p.clientX-rect.left; dY=p.clientY-rect.top; e.preventDefault(); }
@@ -702,21 +777,33 @@ function enableDragging(){
 }
 
 /* ---------- Save seating ---------- */
-async function saveSeating(){
+async function saveSeating(silent=false){
   seats.forEach((s,i)=>{ s.seat_no=i+1; });
-  const payload=seats.map(s=>({seat_no:s.seat_no,student_id:s.student_id??null,x:Math.round(s.x??0),y:Math.round(s.y??0)}));
-  const r=await fetch('../../api/save_seating.php',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({seating:payload})}).then(r=>r.json()).catch(()=>({ok:false}));
+  const payload=seats.map(s=>({
+    seat_no:s.seat_no,
+    student_id:s.student_id??null,
+    x:Math.round(s.x??0),
+    y:Math.round(s.y??0)
+  }));
+
+  const r=await fetch('../../api/save_seating.php',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({seating:payload})
+  }).then(r=>r.json()).catch(()=>({ok:false}));
+
   if(!silent){
     if(r?.ok) toast('Layout saved');
     else toast(r?.message||'Save failed','error');
   }
 }
 
+
 /* ---------- Chair + / - ---------- */
 document.getElementById('plusSeat').onclick=()=>{
   const M=stageMetrics(); const idx=seats.length; const c=idx%Math.max(1,M.maxCols); const r=Math.floor(idx/Math.max(1,M.maxCols));
   seats.push({ seat_no:idx+1, student_id:null, x:M.pad+c*(M.seatW+M.gapX), y:M.pad+r*(M.seatH+M.gapY) });
-  renderSeats(); renderStats(); saveSeating();
+  renderSeats(); renderStats(); saveSeating(true);
 };
 document.getElementById('minusSeat').onclick=()=>{
   if(seats.length<=1) return;
@@ -725,7 +812,7 @@ document.getElementById('minusSeat').onclick=()=>{
   const idx = emptyIndexes.sort((a,b)=>b.s.seat_no-a.s.seat_no)[0].i;
   seats.splice(idx,1);
   seats.sort((a,b)=>a.seat_no-b.seat_no).forEach((s,i)=> s.seat_no=i+1);
-  renderSeats(); renderStats(); saveSeating();
+  renderSeats(); renderStats(); saveSeating(true);
 };
 
 /* ---------- THEMES & SHAPES ---------- */
@@ -760,7 +847,7 @@ window.addEventListener('resize', ()=>{
   const N=seats.length, maxCols=Math.min(stageMetrics().maxCols,8);
   const positions=placeGridCentered(maxCols,Math.ceil(N/Math.max(1,maxCols)),N);
   seats=positions.map((p,i)=>({seat_no:i+1,student_id:seatedIDs[i]||null,x:p.x,y:p.y}));
-  renderSeats(); refreshBehavior();
+  renderSeats(); refreshBehavior(); saveSeating(true);
 });
 
 const tplModal=document.getElementById('tplModal');
@@ -777,6 +864,86 @@ buildCustomizerLists();
 loadData();
 setInterval(refreshBehavior, 3000);
 setInterval(refreshStudents, 6000);
+
+let arrangementLocked = JSON.parse(localStorage.getItem(LOCK_KEY) || 'true'); // default: locked
+
+// example toggle
+// Header controls: Lock + Back grouped on the right
+document.addEventListener('DOMContentLoaded', ()=>{
+  const bar = document.querySelector('h1').parentElement; // ito yung flex na may justify-between
+  const backBtn = document.getElementById('backBtn');
+
+  // gumawa ng wrapper sa kanan
+  const controls = document.createElement('div');
+  controls.className = 'flex items-center gap-2';
+  // palitan si backBtn sa wrapper para right-aligned pa rin
+  bar.replaceChild(controls, backBtn);
+  controls.appendChild(backBtn);
+
+  // create lock button
+  const lockBtn = document.createElement('button');
+  lockBtn.id = 'lockBtn';
+  controls.insertBefore(lockBtn, backBtn); // Lock muna, tapos Back
+
+  function setLockBtnUI(){
+    if (arrangementLocked){
+      // LOCKED: gray (default)
+      lockBtn.textContent = '🔓 Unlock arrangement';
+      lockBtn.className = 'btn bg-gray-100 hover:bg-gray-200 text-gray-800';
+    }else{
+      // UNLOCKED/EDITABLE: blue highlight
+      lockBtn.textContent = '🔒 Lock arrangement';
+      lockBtn.className = 'btn bg-blue-600 hover:bg-blue-700 text-white';
+    }
+  }
+
+  lockBtn.onclick = ()=>{
+    arrangementLocked = !arrangementLocked;
+    localStorage.setItem(LOCK_KEY, JSON.stringify(arrangementLocked)); // save state
+    stage.classList.toggle('is-locked', arrangementLocked);
+    setLockBtnUI();
+    updateSeatStates();
+  };
+
+  // Initial UI + stage class
+  setLockBtnUI();
+  stage.classList.toggle('is-locked', arrangementLocked);
+});
+document.getElementById('stage').classList.toggle('is-locked', arrangementLocked);
+
+
+
+
+
+let lastRosterSig = '';
+function rosterSignature(list){ return (list||[]).map(s=>s.student_id).sort().join(','); }
+
+async function refreshStudents(){
+  try{
+    const S = await fetch('../../api/get_students.php').then(r=>r.json());
+    const newList = S.students || [];
+    const sig = rosterSignature(newList);
+    if (sig === lastRosterSig) return;
+
+    if (arrangementLocked) {
+      toast('Roster changed (unlock to update)');
+      lastRosterSig = sig; // so di paulit-ulit ang toast
+      return; // no rebuild while locked
+    }
+
+    lastRosterSig = sig;
+    const newIds = new Set(newList.map(s=>s.student_id));
+    seats.forEach(s=>{ if(s.student_id!=null && !newIds.has(s.student_id)) s.student_id=null; });
+    students = newList;
+    autoAssignUnseated();
+    renderSeats(); renderStats(); saveSeating(true);
+  }catch(e){}
+}
+
+
+document.getElementById('stage').classList.toggle('is-locked', arrangementLocked);
+
+
 </script>
 </body>
 </html>

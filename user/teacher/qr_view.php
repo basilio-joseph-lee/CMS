@@ -1,10 +1,12 @@
 <?php
 // /CMS/user/teacher/qr_view.php
 session_start();
+include '../../config/teacher_guard.php';
+include "../../config/db.php";
 if (!isset($_SESSION['teacher_id'])) { header("Location: ../teacher_login.php"); exit; }
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-$conn = new mysqli("localhost","root","","cms");
+
 $conn->set_charset("utf8mb4");
 
 $session_id = (int)($_GET['session_id'] ?? 0);

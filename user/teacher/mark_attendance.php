@@ -1,9 +1,7 @@
 <?php
 session_start();
-if (!isset($_SESSION['teacher_id'])) {
-  header("Location: teacher_login.php");
-  exit;
-}
+include '../../config/teacher_guard.php';
+include "../../config/db.php";
 
 $teacher_id = $_SESSION['teacher_id'];
 $subject_id = $_SESSION['subject_id'];
@@ -14,7 +12,6 @@ $subject_name = $_SESSION['subject_name'];
 $class_name = $_SESSION['class_name'];
 $year_label = $_SESSION['year_label'];
 
-$conn = new mysqli("localhost", "root", "", "cms");
 if ($conn->connect_error) {
   die("Connection failed: " . $conn->connect_error);
 }
@@ -86,7 +83,7 @@ while ($row = $resultMarked->fetch_assoc()) {
         <span class="text-red-700"><?= $year_label ?></span>
       </p>
     </div>
-    <a href="../teacher_dashboard.php" class="bg-orange-400 hover:bg-orange-500 text-white text-lg font-bold px-6 py-2 rounded-lg shadow-md">← Back</a>
+    <a href="teacher_dashboard.php" class="bg-orange-400 hover:bg-orange-500 text-white text-lg font-bold px-6 py-2 rounded-lg shadow-md">← Back</a>
   </div>
 
   <form action="../../config/save_attendance.php" method="POST">

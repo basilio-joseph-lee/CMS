@@ -26,7 +26,7 @@ if (!$student_id || !$subject_id || !$advisory_id || !$school_year_id) {
   echo json_encode(['success'=>false,'message'=>'Missing context/student']); exit;
 }
 
-$conn = @new mysqli("localhost","root","","cms");
+include("db.php");
 if ($conn->connect_error) {
   echo json_encode(['success'=>false,'message'=>'DB connection failed']); exit;
 }

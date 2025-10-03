@@ -1,5 +1,7 @@
 <?php
 session_start();
+include '../../config/teacher_guard.php';
+include "../../config/db.php";
 date_default_timezone_set('Asia/Manila');
 if (!isset($_SESSION['teacher_id'])) {
   header("Location: teacher_login.php");
@@ -14,7 +16,7 @@ $subject_name = $_SESSION['subject_name'];
 $class_name = $_SESSION['class_name'];
 $year_label = $_SESSION['year_label'];
 
-$conn = new mysqli("localhost", "root", "", "cms");
+
 if ($conn->connect_error) {
   die("Connection failed: " . $conn->connect_error);
 }
@@ -63,7 +65,7 @@ $records = $result->fetch_all(MYSQLI_ASSOC);
           <button type="submit" class="ml-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">View</button>
         </form>
       </div>
-      <a href="../teacher_dashboard.php" class="bg-orange-400 hover:bg-orange-500 text-white text-lg font-bold px-6 py-2 rounded-lg shadow-md">← Back</a>
+      <a href="teacher_dashboard.php" class="bg-orange-400 hover:bg-orange-500 text-white text-lg font-bold px-6 py-2 rounded-lg shadow-md">← Back</a>
     </div>
 
     <?php if (empty($records)): ?>

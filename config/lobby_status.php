@@ -4,6 +4,7 @@
 
 header('Content-Type: application/json; charset=utf-8');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+include("db.php");
 
 $session_id = (int)($_GET['session_id'] ?? $_POST['session_id'] ?? 0);
 $name = trim((string)($_GET['name'] ?? $_POST['name'] ?? ''));
@@ -14,7 +15,7 @@ if ($session_id <= 0 || $name === '') {
 }
 
 try {
-  $conn = new mysqli("localhost","root","","cms");
+
   $conn->set_charset('utf8mb4');
 
   // Ensure table exists (safe no-op if already created).

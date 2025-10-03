@@ -1,6 +1,7 @@
 <?php
 session_start();
 include '../../config/db.php';
+include '../../config/teacher_guard.php';
 
 $teacher_id = $_SESSION['teacher_id'] ?? 0;
 $subject_id = $_SESSION['subject_id'] ?? null;
@@ -123,7 +124,7 @@ if ($row = $portal_res->fetch_assoc()) {
       <button type="button" onclick="document.getElementById('weightModal').classList.remove('hidden')" class="bg-yellow-300 hover:bg-yellow-400 text-gray-800 font-bold px-4 py-2 rounded-lg shadow">
         ⚖️ Edit Weight %
       </button>
-      <a href="../teacher_dashboard.php" class="bg-orange-400 hover:bg-orange-500 text-white text-lg font-bold px-6 py-2 rounded-lg shadow-md">← Back</a>
+      <a href="teacher_dashboard.php" class="bg-orange-400 hover:bg-orange-500 text-white text-lg font-bold px-6 py-2 rounded-lg shadow-md">← Back</a>
     </div>
   </div>
 

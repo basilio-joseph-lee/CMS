@@ -4,6 +4,7 @@
 session_start();
 header('Content-Type: application/json');
 
+
 $action_type = isset($_POST['action_type']) ? trim($_POST['action_type']) : '';
 $valid = [
   'restroom','snack','daily_note','participated',
@@ -27,7 +28,7 @@ if (!$student_id) {
   echo json_encode(['success'=>false,'message'=>'Missing student_id']); exit;
 }
 
-$conn = @new mysqli("localhost","root","","cms");
+include("db.php");
 if ($conn->connect_error) {
   echo json_encode(['success'=>false,'message'=>'DB connection failed']); exit;
 }

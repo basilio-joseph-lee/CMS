@@ -7,7 +7,7 @@ $subject_id     = (int)($_POST['subject_id']     ?? $_SESSION['active_subject_id
 $advisory_id    = (int)($_POST['advisory_id']    ?? $_SESSION['active_advisory_id']    ?? $_SESSION['advisory_id']    ?? 0);
 $school_year_id = (int)($_POST['school_year_id'] ?? $_SESSION['active_school_year_id'] ?? $_SESSION['school_year_id'] ?? 0);
 
-$conn = @new mysqli('localhost','root','','cms');
+include("db.php");
 if ($conn->connect_error) { echo json_encode([]); exit; }
 $conn->set_charset('utf8mb4');
 

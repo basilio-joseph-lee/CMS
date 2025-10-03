@@ -39,7 +39,7 @@ if (!$result || !$result['match']) {
 $matchedName = $result['name'];
 
 // Connect to database
-$conn = new mysqli("localhost", "root", "", "cms");
+include("db.php");
 if ($conn->connect_error) {
     echo json_encode(['success' => false, 'error' => 'Database connection failed.']);
     exit;

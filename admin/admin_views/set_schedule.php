@@ -4,8 +4,7 @@
 // OPTIONAL: Protect this page (adjust to your auth setup)
 // if (!isset($_SESSION['admin_id'])) { header("Location: index.php"); exit; }
 
-$conn = new mysqli("localhost", "root", "", "cms");
-if ($conn->connect_error) { die("Connection failed: " . $conn->connect_error); }
+include("../config/db.php");
 
 // ---- Get ACTIVE school year ----
 $syRes = $conn->query("SELECT school_year_id, year_label FROM school_years WHERE status='active' LIMIT 1");

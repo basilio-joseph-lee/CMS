@@ -1,9 +1,6 @@
 <?php
 // Ensure this file is loaded via: admin.php?page=grades
-$conn = new mysqli("localhost", "root", "", "cms");
-if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
-}
+include("../config/db.php");
 
 // Handle final grade update logic
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_final_grade'])) {

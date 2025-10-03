@@ -1,5 +1,6 @@
 <?php
 session_start();
+include '../../config/teacher_guard.php';
 if (!isset($_SESSION['teacher_id'])) { header("Location: ../teacher_login.php"); exit; }
 
 $teacherName = htmlspecialchars($_SESSION['fullname'] ?? 'Teacher');

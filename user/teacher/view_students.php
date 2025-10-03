@@ -1,16 +1,9 @@
 <?php
 session_start();
-if (!isset($_SESSION['teacher_id'])) {
-  header("Location: teacher_login.php");
-  exit;
-}
+include '../../config/teacher_guard.php';
+include "../../config/db.php";
 
-$host = "localhost";
-$dbname = "cms";
-$db_user = "root";
-$db_pass = "";
 
-$conn = new mysqli($host, $db_user, $db_pass, $dbname);
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
@@ -47,7 +40,7 @@ $school_year_id = $_SESSION['school_year_id'];
 $subject_name = $_SESSION['subject_name'];
 $class_name = $_SESSION['class_name'];
 $year_label = $_SESSION['year_label'];
-$teacherName = $_SESSION['fullname'];
+$teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
 
 
 $stmt = $conn->prepare("SELECT s.student_id, s.fullname, s.gender, s.avatar_path 
@@ -104,7 +97,7 @@ $students = $result->fetch_all(MYSQLI_ASSOC);
       SY: <?= $year_label ?>
     </p>
   </div>
-  <form action="../teacher_dashboard.php" method="post">
+  <form action="teacher_dashboard.php" method="post">
     <input type="hidden" name="subject_id" value="<?= $subject_id ?>">
     <input type="hidden" name="advisory_id" value="<?= $advisory_id ?>">
     <input type="hidden" name="school_year_id" value="<?= $school_year_id ?>">

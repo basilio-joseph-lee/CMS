@@ -1,4 +1,6 @@
 <?php
+
+include("../config/db.php");
 // Handle Create
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['class_name'])) {
   $className = trim($_POST['class_name']);

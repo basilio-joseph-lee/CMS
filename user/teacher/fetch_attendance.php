@@ -1,5 +1,7 @@
 <?php
 session_start();
+include '../../config/teacher_guard.php';
+include "../../config/db.php";
 
 $subject_id = $_SESSION['subject_id'] ?? null;
 $advisory_id = $_SESSION['advisory_id'] ?? null;
@@ -10,7 +12,7 @@ if (!$subject_id || !$advisory_id || !$school_year_id) {
     exit;
 }
 
-$conn = new mysqli("localhost", "root", "", "cms");
+
 if ($conn->connect_error) {
     die(json_encode(['error' => 'DB connection failed']));
 }

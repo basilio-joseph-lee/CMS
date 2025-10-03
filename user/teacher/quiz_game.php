@@ -1,6 +1,8 @@
 <?php
 // /CMS/user/teacher/quiz_game.php
 session_start();
+include '../../config/teacher_guard.php';
+include "../../config/db.php";
 if (!isset($_SESSION['teacher_id'])) { header("Location: ../teacher_login.php"); exit; }
 
 $teacher_id     = (int)$_SESSION['teacher_id'];
@@ -20,7 +22,7 @@ $total_questions = max(1, (int)($_GET['total_questions'] ?? 5));
 
 // Preload (only when editing an existing quiz_id)
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-$conn = new mysqli("localhost","root","","cms");
+
 $conn->set_charset('utf8mb4');
 
 $boot_items = [];

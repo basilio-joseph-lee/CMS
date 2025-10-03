@@ -1,7 +1,7 @@
 <?php
 // ../../api/save_preferences.php
 session_start();
-require_once "../../config/db.php"; // $pdo or mysqli—update code accordingly
+include("db.php"); // $pdo or mysqli—update code accordingly
 
 header('Content-Type: application/json');
 

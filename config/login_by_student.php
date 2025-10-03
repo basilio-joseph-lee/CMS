@@ -1,26 +1,81 @@
 <?php
-// POST: student_id
-header('Content-Type: application/json');
+// /CMS/config/login_by_student.php
+// Purpose: create a student session after face verification
+// Effects: sets $_SESSION['student_id'], $_SESSION['student_fullname'], $_SESSION['fullname'], $_SESSION['role']='STUDENT'
+
 session_start();
+header('Content-Type: application/json; charset=utf-8');
 
-$student_id = intval($_POST['student_id'] ?? 0);
-if ($student_id <= 0) { echo json_encode(['success'=>false,'message'=>'missing id']); exit; }
+// Only accept POST
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['success' => false, 'error' => 'Invalid request']);
+    exit;
+}
 
-$conn = @new mysqli('localhost','root','','cms');
-if ($conn->connect_error) { echo json_encode(['success'=>false,'message'=>'db']); exit; }
+$student_id = (int)($_POST['student_id'] ?? 0);
+if ($student_id <= 0) {
+    echo json_encode(['success' => false, 'error' => 'Missing student_id']);
+    exit;
+}
+
+// DB connect (this file is in /CMS/config, so db.php is peer)
+require_once __DIR__ . '/db.php';
+if ($conn->connect_error) {
+    echo json_encode(['success' => false, 'error' => 'DB connection failed']);
+    exit;
+}
 $conn->set_charset('utf8mb4');
 
-$stmt = $conn->prepare("SELECT student_id, fullname FROM students WHERE student_id=? LIMIT 1");
-$stmt->bind_param('i', $student_id);
+// Verify student exists
+$stmt = $conn->prepare("SELECT student_id, fullname FROM students WHERE student_id = ? LIMIT 1");
+$stmt->bind_param("i", $student_id);
 $stmt->execute();
-$row = $stmt->get_result()->fetch_assoc();
-$stmt->close(); $conn->close();
+$res = $stmt->get_result();
 
-if (!$row) { echo json_encode(['success'=>false,'message'=>'not found']); exit; }
+if ($res && $res->num_rows === 1) {
+    $row = $res->fetch_assoc();
+    $stmt->close();
 
-// set session like your old login did
-$_SESSION['role']       = 'student';
-$_SESSION['student_id'] = intval($row['student_id']);
-$_SESSION['fullname']   = $row['fullname'];
+    // Fresh session id for security
+    session_regenerate_id(true);
 
-echo json_encode(['success'=>true, 'student_id'=>$_SESSION['student_id'], 'name'=>$_SESSION['fullname']]);
+    // 🔒 Purge any TEACHER / ADMIN leftovers so guards won't bounce us
+    unset(
+        $_SESSION['teacher_id'], $_SESSION['teacher_fullname'], $_SESSION['teacher_name'],
+        $_SESSION['admin_id'],   $_SESSION['admin_fullname']
+    );
+    if (isset($_SESSION['role']) && $_SESSION['role'] !== 'STUDENT') {
+        unset($_SESSION['role']);
+    }
+
+    // Set STUDENT session
+    $_SESSION['student_id']       = (int)$row['student_id'];
+    $_SESSION['student_fullname'] = (string)$row['fullname'];
+    $_SESSION['fullname']         = (string)$row['fullname']; // some pages expect this key
+    $_SESSION['role']             = 'STUDENT';
+
+    // Make the session cookie visible to the whole site (important for /CMS/user/*)
+    setcookie(session_name(), session_id(), [
+        'expires'  => 0,
+        'path'     => '/',                      // critical
+        'secure'   => !empty($_SERVER['HTTPS']),
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+
+    // Make sure session is written before the frontend redirects
+    session_write_close();
+
+    echo json_encode([
+        'success'     => true,
+        'student_id'  => $_SESSION['student_id'],
+        'studentName' => $_SESSION['student_fullname'],
+        // Optional convenience (frontend can use this directly):
+        // 'next'        => '/CMS/user/select_subject.php'
+    ]);
+    exit;
+}
+
+if ($stmt) { $stmt->close(); }
+echo json_encode(['success' => false, 'error' => 'Student not found']);
+exit;

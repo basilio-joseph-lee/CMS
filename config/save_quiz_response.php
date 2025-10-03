@@ -2,6 +2,7 @@
 // config/save_quiz_response.php
 session_start();
 header('Content-Type: application/json');
+include("db.php");
 
 if (!isset($_SESSION['student_id'])) {
   echo json_encode(['ok'=>false,'message'=>'Unauthorized']); exit;
@@ -17,11 +18,11 @@ if (!$student_id || !$session_id || !$qid || !in_array($chosen, ['A','B','C','D'
 }
 
 try {
-  $db = new mysqli('localhost','root','','cms');
-  $db->set_charset('utf8mb4');
+  $conn = new mysqli('localhost','root','','cms');
+  $conn->set_charset('utf8mb4');
 
   // 1) Load the question
-  $stmt = $db->prepare("
+  $stmt = $conn->prepare("
     SELECT question_id, question_no, correct_opt, time_limit_sec, status, published_at
       FROM kiosk_quiz_questions
      WHERE question_id=? AND session_id=? AND status='published'
@@ -35,7 +36,7 @@ try {
   if (!$q) { echo json_encode(['ok'=>false,'message'=>'Question not found']); exit; }
 
   // 2) Prevent double answer
-  $stmt = $db->prepare("SELECT response_id FROM kiosk_quiz_responses WHERE question_id=? AND student_id=? LIMIT 1");
+  $stmt = $conn->prepare("SELECT response_id FROM kiosk_quiz_responses WHERE question_id=? AND student_id=? LIMIT 1");
   $stmt->bind_param("ii", $qid, $student_id);
   $stmt->execute();
   if ($stmt->get_result()->fetch_assoc()) {
@@ -59,7 +60,7 @@ try {
   $points = $base + $speed_bonus;
 
   // 4) Save response
-  $stmt = $db->prepare("
+  $stmt = $conn->prepare("
     INSERT INTO kiosk_quiz_responses
       (question_id, student_id, chosen_opt, is_correct, answered_at, points, time_ms)
     VALUES (?,?,?,?,NOW(),?,?)
@@ -70,7 +71,7 @@ try {
 
   // 5) Is there a next question?
   $nextQ = null;
-  $stmt = $db->prepare("
+  $stmt = $conn->prepare("
     SELECT question_id, question_no
       FROM kiosk_quiz_questions
      WHERE session_id=? AND question_no > ?

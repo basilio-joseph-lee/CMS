@@ -11,7 +11,7 @@ $subject_id     = (int)$_SESSION['subject_id'];
 $advisory_id    = (int)$_SESSION['advisory_id'];
 $school_year_id = (int)$_SESSION['school_year_id'];
 
-$db = new mysqli('localhost','root','','cms');
+include("db.php");
 $db->set_charset('utf8mb4');
 
 // close any published

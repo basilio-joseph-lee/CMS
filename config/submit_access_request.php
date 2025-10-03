@@ -11,7 +11,7 @@ $school_year_id = $_POST['school_year_id'];
 $reason = trim($_POST['reason']);
 
 // Connect to database
-$conn = new mysqli("localhost", "root", "", "cms");
+include("db.php");
 if ($conn->connect_error) {
   die("Connection failed: " . $conn->connect_error);
 }

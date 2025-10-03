@@ -1,5 +1,7 @@
 <?php
 session_start();
+include '../../config/teacher_guard.php';
+include "../../config/db.php";
 if (!isset($_SESSION['teacher_id'])) { header("Location: ../teacher_login.php"); exit; }
 
 $teacher_id     = intval($_SESSION['teacher_id']);
@@ -12,7 +14,6 @@ $subjectName = htmlspecialchars($_SESSION['subject_name'] ?? '');
 $className   = htmlspecialchars($_SESSION['class_name'] ?? '');
 $yearLabel   = htmlspecialchars($_SESSION['year_label'] ?? '');
 
-$conn = new mysqli("localhost","root","","cms");
 if ($conn->connect_error) { die("DB failed: ".$conn->connect_error); }
 $conn->set_charset('utf8mb4');
 

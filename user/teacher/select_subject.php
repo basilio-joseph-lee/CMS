@@ -135,7 +135,7 @@ if (
 
     // ---------------- Redirect by role ----------------
     if (isset($_SESSION['teacher_id'])) {
-        header("Location: ../teacher_dashboard.php");
+        header("Location: ../teacher/teacher_dashboard.php");
         exit;
     } elseif (isset($_SESSION['student_id'])) {
         header("Location: ../dashboard.php?new_login=1");

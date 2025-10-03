@@ -2,7 +2,7 @@
 session_start();
 if (!isset($_SESSION['teacher_id'])) { header("Location: teacher_login.php"); exit; }
 
-$teacherName    = $_SESSION['fullname'];
+$teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
 $subject_id     = $_SESSION['subject_id'];
 $advisory_id    = $_SESSION['advisory_id'];
 $school_year_id = $_SESSION['school_year_id'];
@@ -102,7 +102,7 @@ $femaleAvatars = [
     <h2 class="text-2xl font-bold mb-6">SMARTCLASS KIOSK</h2>
     <a href="teacher_dashboard.php">Home</a>
     <a href="#" class="bg-yellow-300 text-black">Add Student</a>
-    <a href="teacher/view_students.php">View Students</a>
+    <a href="view_students.php">View Students</a>
   </div>
 
   <!-- Main Content -->

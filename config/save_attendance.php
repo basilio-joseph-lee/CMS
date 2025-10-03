@@ -7,12 +7,7 @@ if (!isset($_SESSION['teacher_id'])) {
   exit;
 }
 
-$host = "localhost";
-$dbname = "cms";
-$db_user = "root";
-$db_pass = "";
-
-require_once("db.php");
+include("db.php");
 
 // ✅ Use regular form POST
 $data = $_POST;

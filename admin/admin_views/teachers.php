@@ -1,5 +1,6 @@
 <?php
 // --- Handle Toast Logic & Actions ---
+include("../config/db.php");
 $toast = '';
 if (isset($_GET['success'])) {
   if ($_GET['success'] === 'add') $toast = 'Teacher added successfully!';

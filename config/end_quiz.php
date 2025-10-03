@@ -1,6 +1,8 @@
 <?php
 // /CMS/user/config/end_quiz.php
 session_start();
+include("../config/db.php");
+
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['teacher_id'])) { echo json_encode(['success'=>false,'error'=>'Unauthorized']); exit; }
@@ -15,10 +17,11 @@ if ($session_id <= 0) { echo json_encode(['success'=>false,'error'=>'Missing ses
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
-  $db = new mysqli('localhost','root','','cms'); $db->set_charset('utf8mb4');
+  $conn->set_charset('utf8mb4');
 
-  $q = $db->prepare("UPDATE kiosk_quiz_sessions SET status='ended', ended_at=NOW() WHERE session_id=?");
-  $q->bind_param('i', $session_id); $q->execute();
+  $q = $conn->prepare("UPDATE kiosk_quiz_sessions SET status='ended', ended_at=NOW() WHERE session_id=?");
+  $q->bind_param('i', $session_id); 
+  $q->execute();
 
   echo json_encode(['success'=>true]);
 

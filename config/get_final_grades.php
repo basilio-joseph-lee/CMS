@@ -2,8 +2,8 @@
 // cms/config/get_final_grades.php
 header('Content-Type: application/json');
 
-$mysqli = new mysqli("localhost","root","","cms");
-if ($mysqli->connect_error) {
+include("db.php");
+if ($conn->connect_error) {
   http_response_code(500);
   echo json_encode(['status'=>'error','message'=>'DB error']);
   exit;

@@ -1,13 +1,14 @@
 <?php
 // /CMS/user/config/get_quiz_questions.php
 header('Content-Type: application/json; charset=utf-8');
+include("db.php");
 
 $session_id = (int)($_GET['session_id'] ?? 0);
 if ($session_id <= 0) { echo json_encode(['success'=>false,'error'=>'Missing session_id']); exit; }
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 try {
-  $conn = new mysqli("localhost","root","","cms");
+
   $conn->set_charset("utf8mb4");
 
   $stmt = $conn->prepare("

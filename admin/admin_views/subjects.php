@@ -1,5 +1,7 @@
 <?php
 // Handle Create
+
+include("../config/db.php");
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subject_name'])) {
   $subjectName = trim($_POST['subject_name']);
   if (!empty($subjectName)) {

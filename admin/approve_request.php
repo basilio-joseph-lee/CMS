@@ -1,6 +1,6 @@
 <?php
 session_start();
-$conn = new mysqli("localhost", "root", "", "cms");
+include("../config/db.php");
 
 
 $request_id = $_GET['id'] ?? null;

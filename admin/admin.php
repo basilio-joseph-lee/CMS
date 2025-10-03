@@ -2,10 +2,7 @@
 session_start();
 
 // Include DB connection and config functions later
-$conn = new mysqli("localhost", "root", "", "cms");
-if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
-}
+include("../config/db.php");
 
 $sql = "SELECT school_year_id, year_label 
         FROM school_years 
