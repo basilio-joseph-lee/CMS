@@ -1,0 +1,23 @@
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches:
+      - main   # or the branch you push changes to
+
+jobs:
+  ftp-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Deploy via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
+          port: ${{ secrets.FTP_PORT }}
+          local-dir: ./   # this is your repo root (where index.php is)
+          server-dir: public_html/  # Hostinger default web root
