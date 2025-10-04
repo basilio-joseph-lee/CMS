@@ -4,7 +4,7 @@
 
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-require_once __DIR__ . "/../config/db.php";
+require_once __DIR__ . "../../config/db.php";
 $conn->set_charset('utf8mb4');
 
 /* -------------------- Active School Year -------------------- */
