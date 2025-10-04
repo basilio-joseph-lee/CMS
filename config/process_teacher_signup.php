@@ -2,6 +2,7 @@
 // cms/config/process_teacher_signup.php
 session_start();
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+include("db.php");
 
 // Require POST
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -41,11 +42,11 @@ if (strlen($password) < 6) {
 
 // DB ops
 try {
-    $db = new mysqli('localhost','root','','cms');
-    $db->set_charset('utf8mb4');
+    $conn = new mysqli('localhost','root','','cms');
+    $conn->set_charset('utf8mb4');
 
     // Unique username check
-    $chk = $db->prepare('SELECT teacher_id FROM teachers WHERE username = ? LIMIT 1');
+    $chk = $conn->prepare('SELECT teacher_id FROM teachers WHERE username = ? LIMIT 1');
     $chk->bind_param('s', $username);
     $chk->execute();
     if ($chk->get_result()->num_rows > 0) {
@@ -57,7 +58,7 @@ try {
     $hash = password_hash($password, PASSWORD_DEFAULT);
 
     // Detect if teachers.mobile_number exists
-    $colQ = $db->prepare("
+    $colQ = $conn->prepare("
         SELECT 1
         FROM information_schema.columns
         WHERE table_schema = DATABASE()
@@ -70,7 +71,7 @@ try {
 
     if ($hasMobileColumn) {
         // Insert with mobile_number column
-        $ins = $db->prepare('
+        $ins = $conn->prepare('
             INSERT INTO teachers (username, password, fullname, mobile_number)
             VALUES (?, ?, ?, ?)
         ');
@@ -78,7 +79,7 @@ try {
     } else {
         // Fallback: insert without mobile_number (works with your current schema)
         // NOTE: Mobile is validated but not stored unless you add the column.
-        $ins = $db->prepare('
+        $ins = $conn->prepare('
             INSERT INTO teachers (username, password, fullname)
             VALUES (?, ?, ?)
         ');
