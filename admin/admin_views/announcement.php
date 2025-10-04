@@ -3,8 +3,21 @@
 // NOTE: per request, no session/login guard here.
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-include("../../config/db.php");
+require_once dirname(__DIR__, 2) . '/config/db.php';
+
 $conn->set_charset('utf8mb4');
+
+// Helpers (safe if already defined elsewhere)
+if (!function_exists('h')) {
+    function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+}
+if (!function_exists('postv')) {
+    function postv($k, $d=null){ return $_POST[$k] ?? $d; }
+}
+if (!function_exists('getv')) {
+    function getv($k, $d=null){ return $_GET[$k] ?? $d; }
+}
+
 
 
 /* -------------------- Active School Year -------------------- */
