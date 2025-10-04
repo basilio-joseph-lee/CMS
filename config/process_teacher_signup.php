@@ -2,7 +2,8 @@
 // cms/config/process_teacher_signup.php
 session_start();
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-include("db.php");
+require_once __DIR__ . '/db.php'; // loads /public_html/config/db.php reliably
+
 
 // Require POST
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -42,7 +43,6 @@ if (strlen($password) < 6) {
 
 // DB ops
 try {
-    $conn = new mysqli('localhost','root','','cms');
     $conn->set_charset('utf8mb4');
 
     // Unique username check
