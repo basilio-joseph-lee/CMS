@@ -3,7 +3,7 @@
 // NOTE: per request, no session/login guard here.
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-include("../config/db.php");
+require_once __DIR__ . "/../config/db.php";
 $conn->set_charset('utf8mb4');
 
 function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
