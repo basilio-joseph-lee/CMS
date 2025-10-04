@@ -8,7 +8,7 @@ date_default_timezone_set('Asia/Manila');
 // ---- EDIT THESE FOUR VALUES ----
 $DB_HOST = 'localhost';             // Hostinger MySQL host is usually 'localhost'
 $DB_USER = 'u916312019_joseph';     // your MySQL username
-$DB_PASS = 'REPLACE_WITH_NEW_PASS'; // your NEW password (rotate it in hPanel)
+$DB_PASS = 'Twice_jihyo12345'; // your NEW password (rotate it in hPanel)
 $DB_NAME = 'u916312019_cms';        // your database name
 // --------------------------------
 
