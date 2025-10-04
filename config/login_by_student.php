@@ -2,7 +2,7 @@
 // /CMS/config/login_by_student.php
 // Purpose: create a student session after face verification
 // Effects: sets $_SESSION['student_id'], $_SESSION['student_fullname'], $_SESSION['fullname'], $_SESSION['role']='STUDENT'
-
+session_name('CMS_STUDENT'); 
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 

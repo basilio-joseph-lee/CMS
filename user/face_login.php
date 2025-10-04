@@ -1,5 +1,6 @@
 <?php
 session_start();
+session_name('CMS_STUDENT'); 
 ?>
 <!DOCTYPE html>
 <html lang="en">
