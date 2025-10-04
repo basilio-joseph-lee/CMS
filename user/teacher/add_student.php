@@ -154,7 +154,7 @@ $femaleAvatars = [
             </div>
           </div>
 
-          <form action="../config/register_student.php" method="POST" enctype="multipart/form-data" class="space-y-4 mt-4" id="addStudentForm">
+          <form action="../../config/register_student.php" method="POST" enctype="multipart/form-data" class="space-y-4 mt-4" id="addStudentForm">
             <input type="hidden" name="school_year_id" value="<?= htmlspecialchars($school_year_id) ?>">
             <input type="hidden" name="advisory_id"    value="<?= htmlspecialchars($advisory_id) ?>">
             <input type="hidden" name="subject_id"     value="<?= htmlspecialchars($subject_id) ?>">

@@ -203,28 +203,28 @@ $fullname = $_SESSION['fullname'] ?? 'Student';
     <!-- Quick actions + Quiz -->
     <aside class="space-y-3">
       <div class="grid grid-cols-1 gap-3">
-        <button class="tile" onclick="logBehavior('participated')">🟢 <div class="font-semibold mt-2">I’m Back (IN)</div></button>
+        <button class="tile" onclick="logBehavior('attendance')">🟢 <div class="font-semibold mt-2">I’m Back (IN)</div></button>
       </div>
 
       <div class="grid grid-cols-2 gap-3">
         <button class="tile" onclick="logBehavior('restroom')">🚻 <div class="font-semibold mt-2">Restroom</div></button>
         <button class="tile" onclick="logBehavior('clinic')">🏥 <div class="font-semibold mt-2">Clinic</div></button>
-        <button class="tile" onclick="logBehavior('snack')">🍔 <div class="font-semibold mt-2">Snack</div></button>
+        <!-- <button class="tile" onclick="logBehavior('snack')">🍔 <div class="font-semibold mt-2">Snack</div></button>
         <button class="tile" onclick="logBehavior('water_break')">💧 <div class="font-semibold mt-2">Water Break</div></button>
         <button class="tile" onclick="logBehavior('borrow_book')">📚 <div class="font-semibold mt-2">Borrow Book</div></button>
-        <button class="tile" onclick="logBehavior('return_material')">🔄 <div class="font-semibold mt-2">Return Material</div></button>
+        <button class="tile" onclick="logBehavior('return_material')">🔄 <div class="font-semibold mt-2">Return Material</div></button> -->
         <button class="tile" onclick="logBehavior('lunch_break')">🍱 <div class="font-semibold mt-2">Lunch Break</div></button>
         <button class="tile" onclick="logBehavior('not_well')">😷 <div class="font-semibold mt-2">Not Feeling Well</div></button>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <!-- <div class="grid grid-cols-2 gap-3">
         <button id="quizBtn" class="tile" onclick="openQuiz()">
           ❓ <div class="font-semibold mt-2">Quiz Game</div>
         </button>
         <button class="tile" onclick="openResults()">
           🏆 <div class="font-semibold mt-2">View Results</div>
         </button>
-      </div>
+      </div> -->
 
       <?php if ($announcement_count > 0): ?>
         <div class="text-xs text-slate-400">You have <?= $announcement_count ?> announcement(s).</div>

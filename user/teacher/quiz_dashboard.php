@@ -205,16 +205,16 @@ $base = "http://".$_SERVER['HTTP_HOST'].dirname($_SERVER['PHP_SELF']);
               </a>
 
                <button
-  class="btn red end-btn"
-  data-session-id="<?= (int)$s['session_id'] ?>"
-  data-title="<?= h($s['title']) ?>">
-  End
-</button>
-
+                class="btn red end-btn"
+                data-session-id="<?= (int)$s['session_id'] ?>"
+                data-title="<?= h($s['title']) ?>">
+                End
+              </button>
+<!-- 
                 <a class="btn"
                    href="results_quiz.php?session_id=<?= (int)$s['session_id'] ?>">
                    Results
-                </a>
+                </a> -->
               </td>
             </tr>
           <?php endforeach; ?>

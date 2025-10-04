@@ -21,7 +21,7 @@ $title = $row['title'] ?: 'Quick Quiz';
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
 if ($host === 'localhost' || $host === '127.0.0.1') {
-    $host = '10.108.126.30'; // your LAN IP for mobile testing
+    $host = '192.168.254.123'; // your LAN IP for mobile testing
 }
 /* If your Apache docroot serves CMS at the root (no /CMS in the URL),
    change the line below to: $base = $scheme.'://'.$host.'/user/'; */

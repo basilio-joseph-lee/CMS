@@ -138,6 +138,20 @@ if (!$session_id) {
   <section id="locked" class="rounded-3xl bg-green-50 border border-green-200 shadow-xl p-8 text-center hidden">
     <h3 class="text-2xl font-bold" id="lockedTitle">Answer submitted!</h3>
     <p class="text-gray-700 mt-2" id="lockedMsg">Waiting for next question…</p>
+
+    <!-- NEW: Live standings after each submission -->
+    <div class="mt-6 text-left">
+      <div class="font-semibold">Live standings</div>
+      <div id="miniLb" class="mt-2 space-y-2"></div>
+    </div>
+  </section>
+
+  <!-- COMPLETED (no button now) -->
+  <section id="completed" class="rounded-3xl bg-white/90 backdrop-blur shadow-xl p-8 hidden">
+    <div class="text-center">
+      <h2 class="text-3xl md:text-4xl font-extrabold">✅ Successfully completed the quiz</h2>
+      <p class="text-gray-600 mt-1">Please keep this page open while waiting for your teacher to end the session.</p>
+    </div>
   </section>
 
   <!-- ENDED + LEADERBOARD -->
@@ -219,21 +233,24 @@ function playerName(){
 }
 function getName(){ return (localStorage.getItem('kiosk_player_name')||'').trim(); }
 
-function toLobby(){ STATE="LOBBY"; ['countdown','question','locked','results','ended'].forEach(hide); show('lobby'); }
+function toLobby(){ STATE="LOBBY"; ['countdown','question','locked','results','ended','completed'].forEach(hide); show('lobby'); }
 function toCountdown(n=3){
-  STATE="COUNTDOWN"; ['lobby','question','locked','results','ended'].forEach(hide); show('countdown');
+  STATE="COUNTDOWN"; ['lobby','question','locked','results','ended','completed'].forEach(hide); show('countdown');
   el('cdNum').textContent = n;
   const t = setInterval(()=>{ n--; el('cdNum').textContent = n; sTick.currentTime=0; sTick.play().catch(()=>{}); if(n<=0){ clearInterval(t); toQuestion(); } }, 900);
 }
 function toQuestion(){
-  STATE="QUESTION"; ['lobby','countdown','locked','results','ended'].forEach(hide); show('question');
+  STATE="QUESTION"; ['lobby','countdown','locked','results','ended','completed'].forEach(hide); show('question');
   renderQuestion(ACTIVE); startTimer(ACTIVE.time_limit || 30);
 }
 function toLocked(msg="Waiting for next question…"){
-  STATE="LOCKED"; ['lobby','countdown','question','results','ended'].forEach(hide); show('locked'); el('lockedMsg').textContent = msg;
+  STATE="LOCKED"; ['lobby','countdown','question','results','ended','completed'].forEach(hide); show('locked'); el('lockedMsg').textContent = msg;
+}
+function toCompleted(){
+  STATE="COMPLETED"; ['lobby','countdown','question','locked','results','ended'].forEach(hide); show('completed');
 }
 function toEnded(){
-  STATE="ENDED"; ['lobby','countdown','question','locked','results'].forEach(hide); show('ended');
+  STATE="ENDED"; ['lobby','countdown','question','locked','results','completed'].forEach(hide); show('ended');
 }
 
 setInterval(()=>{ const d=el('lobbyDot'); if(d){ d.textContent = (d.textContent==='•' ? '◦' : '•'); }}, 700);
@@ -251,6 +268,7 @@ async function lobbyPing(){
     const r = await fetch(`../config/lobby_status.php?session_id=${encodeURIComponent(SESSION_ID)}&name=${encodeURIComponent(name)}`, {cache:'no-store'});
     const d = await r.json();
     if(!d.success) return;
+    const ST = String(d.session_status || '').toLowerCase();
 
     // list
     const list = Array.isArray(d.players) ? d.players : [];
@@ -263,13 +281,14 @@ async function lobbyPing(){
       wrap.appendChild(div);
     });
 
-    if (d.session_status === 'ongoing') {
-      clearInterval(lobbyPoll); lobbyPoll=null;
+    if (ST === 'ongoing') {
+      clearInterval(lobbyPoll); lobbyPoll = null;
       refreshState(); startPolling();
     }
-    if (d.session_status === 'ended') {
-      clearInterval(lobbyPoll); lobbyPoll=null;
+    if (ST === 'ended' || ST === 'closed' || ST === 'finished') {
+      clearInterval(lobbyPoll); lobbyPoll = null;
       await loadLeaderboard(); toEnded();
+      return;
     }
   }catch(e){}
 }
@@ -285,18 +304,25 @@ async function refreshState(){
     const res = await fetch(`../config/get_active_quiz.php?session_id=${encodeURIComponent(SESSION_ID)}&player=${encodeURIComponent(name)}`, {cache:'no-store'});
     const d   = await res.json();
     if(!d.success) return;
+    const ST = String(d.session_status || '').toLowerCase();
 
-    if(d.session_status === 'ended'){
+    if (ST === 'ended' || ST === 'closed') {
       stopPolling();
       await loadLeaderboard();
       toEnded();
       return;
     }
 
-    if(d.session_status !== 'ongoing'){ // draft/active (not started)
+    if (ST !== 'ongoing') { // draft/active (not started)
       stopPolling(); startLobby(); return;
     }
-    if(!d.quiz){ toLobby(); return; }
+
+    // If session is ongoing but there is no active quiz for this player,
+    // show Completed (not Lobby).
+    if(!d.quiz){
+      toCompleted();
+      return;
+    }
 
     const q = d.quiz;
     if(lastSeenQid !== q.question_id){
@@ -355,6 +381,9 @@ async function submitAnswer(){
     const msg = d.correct ? `🎉 Correct! +${d.points||0} pts` : `❌ Incorrect, +${d.points||0} pts`;
     toLocked(msg);
 
+    // NEW: load mini leaderboard right after submitting
+    loadMiniLeaderboard();
+
     FREEZE = true; stopPolling();
     setTimeout(async () => {
       await refreshState();
@@ -366,7 +395,7 @@ async function submitAnswer(){
   }
 }
 
-// ---------- Leaderboard rendering ----------
+// ---------- Leaderboards ----------
 async function loadLeaderboard(){
   try{
     const r = await fetch(`../config/get_leaderboard.php?session_id=${encodeURIComponent(SESSION_ID)}`, {cache:'no-store'});
@@ -375,6 +404,15 @@ async function loadLeaderboard(){
 
     renderPodium(d.players||[], d.total_questions||0);
     renderList(d.players||[], d.total_questions||0);
+  }catch(e){}
+}
+
+async function loadMiniLeaderboard(){
+  try{
+    const r = await fetch(`../config/get_leaderboard.php?session_id=${encodeURIComponent(SESSION_ID)}`, {cache:'no-store'});
+    const d = await r.json();
+    if(!d.success) return;
+    renderMiniList(d.players||[]);
   }catch(e){}
 }
 
@@ -399,7 +437,7 @@ function renderPodium(players, total){
   });
 }
 
-// List: uses server-provided competition rank (handles ties)
+// Top list
 function renderList(players, total){
   const list = players.slice(0,10);
   const box = el('lbList'); box.innerHTML = '';
@@ -411,7 +449,25 @@ function renderList(players, total){
           <div class="w-7 h-7 rounded-full bg-indigo-600 text-white grid place-items-center font-bold">${rank}</div>
           <div class="font-semibold">${escapeHtml(p.name)}</div>
         </div>
-        <div class="text-sm text-gray-600">${p.correct||0}/${total} correct</div>
+        <div class="text-sm text-gray-600">${p.points||0} pts</div>
+      </div>
+    `);
+  });
+}
+
+// Mini list under LOCKED (compact)
+function renderMiniList(players){
+  const list = players.slice(0,10);
+  const box = el('miniLb'); if(!box) return;
+  box.innerHTML = '';
+  list.forEach(p=>{
+    const rank = p.rank || 0;
+    box.insertAdjacentHTML('beforeend', `
+      <div class="flex items-center justify-between border rounded-xl bg-white px-3 py-2 shadow-sm">
+        <div class="flex items-center gap-3">
+          <div class="w-7 h-7 rounded-full bg-indigo-600 text-white grid place-items-center font-bold">${rank}</div>
+          <div class="font-semibold">${escapeHtml(p.name)}</div>
+        </div>
         <div class="font-bold">${p.points||0} pts</div>
       </div>
     `);
