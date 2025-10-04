@@ -1,9 +1,9 @@
 <?php
 
-$host = "localhost";
-$dbname = "cms";
-$db_user = "root";
-$db_pass = "";
+$host = "localhost"; // Hostinger always uses localhost for MySQL
+$user = "u916312019_joseph";   // your actual MySQL username
+$pass = "Twice_jihyo12345";         // the password you set
+$db   = "u916312019_cms"; 
 
 // Connect to DB
 $conn = new mysqli($host, $db_user, $db_pass, $dbname);
