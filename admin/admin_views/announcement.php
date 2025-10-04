@@ -2,9 +2,13 @@
 // admin_announcements.php
 // NOTE: per request, no session/login guard here.
 
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+include("../../config/db.php");
+$conn->set_charset('utf8mb4');
 
-
-include('../config/db.php');
+function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+function postv($k,$d=null){ return $_POST[$k] ?? $d; }
+function getv($k,$d=null){ return $_GET[$k] ?? $d; }
 
 /* -------------------- Active School Year -------------------- */
 $sy = $conn->query("SELECT school_year_id, year_label FROM school_years WHERE status='active' LIMIT 1");
