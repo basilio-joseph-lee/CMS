@@ -3,9 +3,8 @@
 // NOTE: per request, no session/login guard here.
 
 
-mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-require_once __DIR__ . "../../config/db.php";
-$conn->set_charset('utf8mb4');
+
+include('../config/db.php');
 
 /* -------------------- Active School Year -------------------- */
 $sy = $conn->query("SELECT school_year_id, year_label FROM school_years WHERE status='active' LIMIT 1");
