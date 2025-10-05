@@ -9,14 +9,14 @@
 session_start();
 date_default_timezone_set('Asia/Manila');
 
-// --- Require a logged-in user (teacher or student) ---
+// Allow either teacher or student
 if (!isset($_SESSION['teacher_id']) && !isset($_SESSION['student_id'])) {
-    header("Location: index.php");
+    header("Location: ../index.php"); // go back to /user/index.php
     exit;
 }
-
-// --- DB ---
 include '../../config/db.php';
+
+
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
