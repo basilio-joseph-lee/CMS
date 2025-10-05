@@ -315,6 +315,46 @@ const API = <?php
   $apiBase = "$scheme://$host$base/api";
   echo json_encode($apiBase);
 ?>;
+// Base origin like https://myschoolness.site or http://localhost/CMS
+const ROOT = API.replace(/\/api$/, '');
+const AVATAR_BASE = ROOT + '/img/avatar';
+const AVATAR_FALLBACK = AVATAR_BASE + '/default-student.png';
+
+// Normalize ANY stored value (absolute, relative, CMS paths, etc.)
+function fixAvatar(u) {
+  if (!u || typeof u !== 'string') return AVATAR_FALLBACK;
+  if (u.startsWith('data:')) return u; // allow data URLs
+
+  let p = u.trim();
+
+  // If absolute URL (from localhost or another host), keep only its path
+  try {
+    if (/^https?:\/\//i.test(p)) p = new URL(p).pathname;
+  } catch (_) {}
+
+  // Ensure leading slash
+  if (!p.startsWith('/')) p = '/' + p;
+
+  // Strip old folder names
+  p = p
+    .replace(/^\/CMS\//i, '/')
+    .replace(/^\/avatar\//i, '/img/avatar/')
+    .replace(/^\/avatars\//i, '/img/avatar/')
+    .replace(/^\/img\/avatars\//i, '/img/avatar/');
+
+  // If it's just a filename like "/23.png", move it into /img/avatar/
+  if (/^\/[^/]+\.(png|jpe?g|gif|webp)$/i.test(p)) {
+    return `${AVATAR_BASE}${p}`;
+  }
+
+  // If it already looks like /img/avatar/xxx.png, make it absolute on this origin
+  if (/^\/img\/avatar\/.+\.(png|jpe?g|gif|webp)$/i.test(p)) {
+    return `${ROOT}${p}`;
+  }
+
+  // Anything else → fallback
+  return AVATAR_FALLBACK;
+}
 
 
 
@@ -596,8 +636,10 @@ const S=await fetch(`${API}/get_students.php`, { ...FETCH_OPTS }).then(r=>r.json
         node.style.left=(seat.x ?? 14)+'px';
         node.style.top=(seat.y ?? 14)+'px';
 
-        const s=students.find(x=>x.student_id==seat.student_id);
-        const hasStudent=!!s; const img=s?.avatar_url; const name=s?.fullname || 'Empty';
+       const s=students.find(x=>x.student_id==seat.student_id);
+const hasStudent=!!s; const img = fixAvatar(s?.avatar_url);
+
+
         const colIndex=i%colsForBias; const biasClass=(colIndex%2===0)?'tilt-left':'tilt-right';
 
         const st=hasStudent ? behaviorMap[String(s.student_id)] : null;
@@ -613,7 +655,10 @@ const isAway           = isBackOverride ? false : (overlayApplies || individuall
             ${hasStudent ? `
               <div class="avatar-wrapper">
                 <div class="avatar-bias ${biasClass}">
-                  <img src="${img}" class="avatar-img" style="--headDur:${(2.4+Math.random()*1.4).toFixed(2)}s;animation-delay:${(Math.random()*1.8).toFixed(2)}s;" />
+                 <img src="${img}" class="avatar-img"
+     onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';"
+     style="--headDur:${(2.4+Math.random()*1.4).toFixed(2)}s;animation-delay:${(Math.random()*1.8).toFixed(2)}s;" />
+
                 </div>
                 ${(()=>{ const txt = overlayApplies ? actionOverlayText() : (individuallyAway ? actionText(actionKey) : modeText()); return txt ? `<div class="status-bubble">${txt}</div>` : '' })()}
               </div>
