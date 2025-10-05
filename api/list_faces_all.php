@@ -8,7 +8,6 @@ error_reporting(E_ERROR | E_PARSE);
 
 try {
     // --- DB ---
-    // IMPORTANT: use a relative include (works on live hosting)
     include __DIR__ . '/../config/db.php';
     $conn->set_charset('utf8mb4');
 
@@ -17,27 +16,37 @@ try {
     $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $base   = $scheme . '://' . $host;
 
-    // Helper: turn a stored path into an absolute URL under the same origin.
-    // Accepts already-absolute http(s) URLs; otherwise makes "/...".
-    function to_url(string $p, string $base): string {
+    /**
+     * Map a DB path to a web path that exists on this deployment.
+     * - Accepts absolute http(s) -> return as-is.
+     * - Normalizes to root-relative "/..."
+     * - IMPORTANT: If it starts with "/CMS/...", strip the "/CMS" because your live files
+     *   are deployed at "/student_faces/..." (no CMS folder in public_html).
+     */
+    function map_web_path(string $p): string {
         $p = trim($p);
         if ($p === '') return '';
-        if (preg_match('#^https?://#i', $p)) return $p;         // already absolute
-        if ($p[0] !== '/') $p = '/' . ltrim($p, './');          // make root-relative
-        return $base . $p;
+        if (preg_match('#^https?://#i', $p)) return $p; // already absolute URL
+
+        // normalize to root-relative
+        $p = '/' . ltrim($p, '/');
+
+        // LIVE FIX: drop leading "/CMS" if present (since you didn't deploy the CMS folder)
+        if (strpos($p, '/CMS/') === 0) {
+            $p = substr($p, 4); // remove '/CMS'
+        }
+        return $p;
     }
 
-    // Helper: check if the file is actually present on disk (best-effort).
-    // Maps a web path "/uploads/..." -> $_SERVER['DOCUMENT_ROOT']."/uploads/..."
+    // Quick existence check (best-effort) for root-relative paths.
     function web_path_exists(string $webPath): bool {
+        if (preg_match('#^https?://#i', $webPath)) return true;
         $docRoot = rtrim($_SERVER['DOCUMENT_ROOT'] ?? '', '/');
         if ($docRoot === '') return true; // unknown; don't block
-        $fsPath  = $docRoot . $webPath;
-        return file_exists($fsPath);
+        return file_exists($docRoot . $webPath);
     }
 
     // ---- Query students that have a face image path ----
-    // Adjust table/column names if yours differ.
     $sql = "SELECT student_id, fullname, face_image_path
             FROM students
             WHERE face_image_path IS NOT NULL AND face_image_path <> ''";
@@ -45,36 +54,23 @@ try {
 
     $out = [];
     foreach ($rows as $r) {
-        $raw   = (string)($r['face_image_path'] ?? '');
-        $url   = to_url($raw, $base);
+        $raw     = (string)($r['face_image_path'] ?? '');
+        $webPath = map_web_path($raw);
+        $url     = preg_match('#^https?://#i', $webPath) ? $webPath : ($base . $webPath);
 
-        // If the raw path wasn't absolute and doesn't exist under current root,
-        // try a common alternate "/CMS/..." prefix (shared hosting quirk).
-        if (!preg_match('#^https?://#i', $raw)) {
-            $webRel = (strpos($url, $base) === 0) ? substr($url, strlen($base)) : $url;
-            if (!web_path_exists($webRel)) {
-                $alt = '/CMS/' . ltrim($webRel, '/');
-                if (web_path_exists($alt)) {
-                    $url = $base . $alt;
-                }
-            }
-        }
-
-        // Final safety: only include rows with some URL string
-        if ($url !== '') {
+        // Only emit rows that we can plausibly serve
+        if ($webPath !== '' && web_path_exists($webPath)) {
             $out[] = [
                 'student_id'      => (int)$r['student_id'],
                 'fullname'        => (string)$r['fullname'],
-                // Keep original for backwards-compat, but also expose a normalized absolute URL:
-                'face_image_path' => $raw,
-                'face_image_url'  => $url,
+                'face_image_path' => $raw,     // original (for reference/back-compat)
+                'face_image_url'  => $url,     // normalized absolute URL used by JS
             ];
         }
     }
 
     echo json_encode($out, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
-    // Never leak HTML; return a JSON error object instead.
     http_response_code(500);
     echo json_encode(['error' => 'server_error', 'message' => $e->getMessage()]);
 }
