@@ -299,33 +299,22 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
         // Build an absolute API base that works in subfolders and on production
 // Build an absolute API base that works in subfolders and on production
 // Build an absolute API base that works in local and deployment
-// Base origin like https://myschoolness.site or http://localhost/CMS
-const ROOT = API.replace(/\/api$/, '');
+const API = <?php
+  // --- Detect HTTPS (supports reverse proxy, Cloudflare, etc.) ---
+  $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+         || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+  $scheme = $https ? 'https' : 'http';
+  $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
 
-// --- Normalize avatar paths ---
-function fixAvatar(u) {
-  const fallback = ROOT + '/img/avatar/default-student.png';
-  if (!u || typeof u !== 'string') return fallback;
+  // --- Detect current directory, strip trailing /user/... for base ---
+  $path = $_SERVER['PHP_SELF'] ?? '/';
+  $base = preg_replace('~(?i)(/CMS)?/user/.*$~', '$1', $path); // keeps /CMS if local, removes /user path
+  $base = rtrim($base, '/');
 
-  // Normalize to leading slash
-  let p = u.trim();
-  if (!p.startsWith('/')) p = '/' + p;
-
-  // Remove old "/CMS" prefixes that no longer exist after deployment
-  p = p.replace(/^\/CMS\//i, '/');
-
-  // Fix old variants (/avatar/, /avatars/, etc.)
-  p = p.replace(/^\/avatar\//i, '/img/avatar/');
-  p = p.replace(/^\/avatars\//i, '/img/avatar/');
-  p = p.replace(/^\/img\/avatars\//i, '/img/avatar/');
-
-  // Bare filename (like /23.png) → /img/avatar/23.png
-  if (/^\/[^/]+\.(png|jpe?g|gif|webp)$/i.test(p)) p = '/img/avatar' + p;
-
-  // Make absolute
-  return ROOT + p;
-}
-
+  // --- Compose final API base (auto works for local + live) ---
+  $apiBase = "$scheme://$host$base/api";
+  echo json_encode($apiBase);
+?>;
 
 
 
@@ -608,8 +597,7 @@ const S=await fetch(`${API}/get_students.php`, { ...FETCH_OPTS }).then(r=>r.json
         node.style.top=(seat.y ?? 14)+'px';
 
         const s=students.find(x=>x.student_id==seat.student_id);
-        const hasStudent=!!s; const img = fixAvatar(s?.avatar_url);
- const name=s?.fullname || 'Empty';
+        const hasStudent=!!s; const img=s?.avatar_url; const name=s?.fullname || 'Empty';
         const colIndex=i%colsForBias; const biasClass=(colIndex%2===0)?'tilt-left':'tilt-right';
 
         const st=hasStudent ? behaviorMap[String(s.student_id)] : null;
