@@ -312,8 +312,6 @@ const API = <?php
   echo json_encode($apiBase);
 ?>;
 
-// ==== ROOT (for images, avatars, etc.) ====
-const ROOT = API.replace(/\/api$/, '');
 
 
 
@@ -575,37 +573,6 @@ const S=await fetch(`${API}/get_students.php`, { ...FETCH_OPTS }).then(r=>r.json
     }
 
     // ---------- Rendering ----------
-
-    // Normalize avatar paths so they work in both localhost and production
-function avatarSrc(u) {
-  const fallback = ROOT + '/img/avatars/default-student.png';
-
-  if (!u || typeof u !== 'string') return fallback;
-
-  // Protocol-relative (//cdn...)
-  if (u.startsWith('//')) return location.protocol + u;
-
-  // Absolute but localhost → rewrite to live host
-  if (/^https?:\/\//i.test(u)) {
-    try {
-      const url = new URL(u);
-      if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-        url.protocol = location.protocol;
-        url.host     = location.host;
-      }
-      if (location.protocol === 'https:' && url.protocol !== 'https:') {
-        url.protocol = 'https:';
-      }
-      return url.href;
-    } catch {
-      return fallback;
-    }
-  }
-
-  // Relative path → attach ROOT
-  return (u.startsWith('/')) ? (ROOT + u) : (ROOT + '/' + u);
-}
-
     function renderSeats(){
       seatLayer.innerHTML='';
       const M=stageMetrics();
@@ -626,11 +593,8 @@ function avatarSrc(u) {
         node.style.left=(seat.x ?? 14)+'px';
         node.style.top=(seat.y ?? 14)+'px';
 
-const s = students.find(x => x.student_id == seat.student_id);
-const hasStudent = !!s;
-const img = hasStudent ? avatarSrc(s.avatar_url) : null;
-const name = s?.fullname || 'Empty';
-
+        const s=students.find(x=>x.student_id==seat.student_id);
+        const hasStudent=!!s; const img=s?.avatar_url; const name=s?.fullname || 'Empty';
         const colIndex=i%colsForBias; const biasClass=(colIndex%2===0)?'tilt-left':'tilt-right';
 
         const st=hasStudent ? behaviorMap[String(s.student_id)] : null;
@@ -646,9 +610,7 @@ const isAway           = isBackOverride ? false : (overlayApplies || individuall
             ${hasStudent ? `
               <div class="avatar-wrapper">
                 <div class="avatar-bias ${biasClass}">
-                  <img src="${img}" class="avatar-img"
-     onerror="this.onerror=null;this.src='${ROOT}/img/avatars/default-student.png';"
-     style="--headDur:${(2.4+Math.random()*1.4).toFixed(2)}s;animation-delay:${(Math.random()*1.8).toFixed(2)}s;" />
+                  <img src="${img}" class="avatar-img" style="--headDur:${(2.4+Math.random()*1.4).toFixed(2)}s;animation-delay:${(Math.random()*1.8).toFixed(2)}s;" />
                 </div>
                 ${(()=>{ const txt = overlayApplies ? actionOverlayText() : (individuallyAway ? actionText(actionKey) : modeText()); return txt ? `<div class="status-bubble">${txt}</div>` : '' })()}
               </div>
