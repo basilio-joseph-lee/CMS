@@ -45,7 +45,7 @@ if (!$fullname || !$gender || !$school_year_id || !$advisory_id || !$subject_id)
 if ($capturedFace === '' && $chosenAvatar === '') {
   $_SESSION['toast'] = "Please choose a 2D avatar or capture a face.";
   $_SESSION['toast_type'] = "error";
-  header("Location: /CMS/user/teacher/add_student.php");
+  header("Location: https://myschoolness.site/user/teacher/add_student.php");
   exit;
 }
 
@@ -63,7 +63,7 @@ if ($chosenAvatar !== '') {
     if (!is_file($candidateFs2)) {
       $_SESSION['toast'] = "Selected avatar not found.";
       $_SESSION['toast_type'] = "error";
-      header("Location: /CMS/user/teacher/add_student.php");
+      header("Location: https://myschoolness.site/user/teacher/add_student.php");
       exit;
     }
     $candidateFs = $candidateFs2;
@@ -86,7 +86,7 @@ if ($capturedFace !== '') {
   if ($binary === false) {
     $_SESSION['toast'] = "Invalid captured image data.";
     $_SESSION['toast_type'] = "error";
-    header("Location: /CMS/user/teacher/add_student.php");
+    header("Location: https://myschoolness.site/user/teacher/add_student.php");
     exit;
   }
 
@@ -99,7 +99,7 @@ if ($capturedFace !== '') {
   if (file_put_contents($faceFs, $binary) === false) {
     $_SESSION['toast'] = "Failed to save captured face.";
     $_SESSION['toast_type'] = "error";
-    header("Location: /CMS/user/teacher/add_student.php");
+    header("Location: https://myschoolness.site/user/teacher/add_student.php");
     exit;
   }
   // Public URL to store in DB
@@ -126,7 +126,7 @@ if ($check_stmt->num_rows > 0) {
   $check_stmt->close();
   $_SESSION['toast'] = "⚠️ Student already exists in this subject, section and school year.";
   $_SESSION['toast_type'] = "error";
-  header("Location: /CMS/user/teacher/add_student.php");
+  header("Location: https://myschoolness.site/user/teacher/add_student.php");
   exit;
 }
 $check_stmt->close();
@@ -154,7 +154,7 @@ if ($stmt->execute()) {
 
   $_SESSION['toast'] = "✅ Student added successfully!";
   $_SESSION['toast_type'] = "success";
-  header("Location: /CMS/user/teacher/add_student.php");
+  header("Location: /user/teacher/add_student.php");
   exit;
 } else {
   echo "❌ Failed to register student: " . $stmt->error;
