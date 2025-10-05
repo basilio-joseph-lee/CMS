@@ -291,10 +291,30 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     <button data-log="snack" class="block w-full text-left px-3 py-2 hover:bg-gray-100">🍎 Snack</button>
     <button data-log="help_request" class="block w-full text-left px-3 py-2 hover:bg-gray-100">✋ Raise Hand</button>
     <button data-log="participated" class="block w-full text-left px-3 py-2 hover:bg-gray-100">✅ Participated</button>
-    <button data-log="attendance" class="block w-full text-left px-3 py-2 hover:bg-gray-100">🟢 I’m Back</button>
+    <button data-log="im_back" class="block w-full text-left px-3 py-2 hover:bg-gray-100">🟢 I’m Back</button>
   </div>
 
   <script>
+
+        // Build an absolute API base that works in subfolders and on production
+// Build an absolute API base that works in subfolders and on production
+const API = <?php
+  // Honor reverse proxy HTTPS too
+  $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || 
+            (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+  $scheme = $https ? 'https' : 'http';
+  $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+  // current file: /CMS/user/teacher/thisfile.php -> go up 3 levels to reach /CMS
+  $base   = rtrim(dirname($_SERVER['PHP_SELF'] ?? '/', 3), '/');
+  echo json_encode("$scheme://$host$base/api");
+?>;
+
+    // Always send cookies and mark as XHR (some hosts/mod_security like this)
+    const FETCH_OPTS = {
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    };
+
     // ---------- Small helpers ----------
     function modeText(){ return mode==='quiz' ? '✏️' : (mode==='discussion' ? '📖' : ''); }
     function actionOverlayText(){ return globalAction==='break' ? '🍱' : (globalAction==='out' ? '🚪' : ''); }
@@ -364,9 +384,13 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
         const action_type = (kind==='break') ? 'lunch_break' : 'out_time';
         try{
           btn.disabled = true;
-          const resp = await fetch('../../api/log_behavior_bulk.php',{
-            method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({action_type, student_ids})
-          });
+const resp = await fetch(`${API}/log_behavior_bulk.php`,{
+  method:'POST',
+  headers:{ 'Content-Type':'application/json', ...FETCH_OPTS.headers },
+  credentials: FETCH_OPTS.credentials,
+  body: JSON.stringify({action_type, student_ids})
+});
+
           const raw = await resp.text();
           let r; try{ r=JSON.parse(raw);}catch{ throw new Error('Bulk API returned non-JSON: '+raw.slice(0,120)); }
           if (!r?.ok) throw new Error(r?.message || 'Bulk log failed');
@@ -450,10 +474,11 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
     // ---------- Data loading & roster sync ----------
     async function loadData(){
-      const [S,P] = await Promise.all([
-        fetch('../../api/get_students.php').then(r=>r.json()),
-        fetch('../../api/get_seating.php').then(r=>r.json())
-      ]);
+const [S,P] = await Promise.all([
+  fetch(`${API}/get_students.php`, { ...FETCH_OPTS }).then(r=>r.json()),
+  fetch(`${API}/get_seating.php`,  { ...FETCH_OPTS }).then(r=>r.json())
+]);
+
       students = S.students || [];
       seats = normalizeSeating(P.seating);
 
@@ -511,7 +536,8 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
     async function refreshStudents(){
       try{
-        const S=await fetch('../../api/get_students.php').then(r=>r.json());
+const S=await fetch(`${API}/get_students.php`, { ...FETCH_OPTS }).then(r=>r.json());
+
         const newList=S.students||[];
         const newIds=new Set(newList.map(s=>s.student_id));
         seats.forEach(s=>{ if(s.student_id!=null && !newIds.has(s.student_id)) s.student_id=null; });
@@ -566,9 +592,11 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
         const st=hasStudent ? behaviorMap[String(s.student_id)] : null;
         const actionKey=st ? String(st.action||'').toLowerCase() : '';
-        const individuallyAway=!!(st && (st.is_away || AWAY_ACTIONS.has(actionKey)));
-        const overlayApplies=!!globalAction && !backSet.has(String(seat.student_id)) && !(st && !individuallyAway);
-        const isAway=overlayApplies || individuallyAway;
+const individuallyAway = !!(st && (st.is_away || AWAY_ACTIONS.has(actionKey)));
+const isBackOverride   = backSet.has(String(seat.student_id));
+const overlayApplies   = !!globalAction && !isBackOverride && !(st && !individuallyAway);
+const isAway           = isBackOverride ? false : (overlayApplies || individuallyAway);
+
 
         node.innerHTML = `
           <div class="card ${hasStudent?'has-student':'empty'} ${isAway?'is-away':''}">
@@ -616,7 +644,7 @@ if (hasStudent) {
     // ---------- Behavior refresh ----------
     async function refreshBehavior(){
       try{
-        const res=await fetch('../../api/get_behavior_status.php').then(r=>r.json());
+        const res=await fetch(`${API}/get_behavior_status.php`, { ...FETCH_OPTS }).then(r=>r.json());
         if(!res || res.ok===false) return;
         behaviorMap={};
         if(res.map && typeof res.map==='object'){
@@ -659,9 +687,13 @@ if (hasStudent) {
       menu.querySelectorAll('[data-action-student]').forEach(btn=>{
         btn.onclick = async ()=>{
           const sid=menu.dataset.studentId, status=btn.dataset.actionStudent;
-          const r=await fetch('../../api/mark_attendance.php',{
-            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({student_id:sid,status})
-          }).then(r=>r.json());
+const r=await fetch(`${API}/mark_attendance.php`,{
+  method:'POST',
+  headers:{ 'Content-Type':'application/json', ...FETCH_OPTS.headers },
+  credentials: FETCH_OPTS.credentials,
+  body: JSON.stringify({student_id:sid,status})
+}).then(r=>r.json());
+
           toast(r.message||'Saved');
           menu.classList.add('hidden');
           if(status==='Present'||status==='Late') markStudentBack(sid); else markStudentAway(sid);
@@ -673,9 +705,13 @@ if (hasStudent) {
       menu.querySelectorAll('[data-log]').forEach(btn=>{
         btn.onclick = async ()=>{
           const sid=menu.dataset.studentId, action_type=btn.dataset.log;
-          const r=await fetch('../../api/log_behavior.php',{
-            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({student_id:sid,action_type})
-          }).then(r=>r.json()).catch(()=>({message:'Network error'}));
+const r=await fetch(`${API}/log_behavior.php`,{
+  method:'POST',
+  headers:{ 'Content-Type':'application/json', ...FETCH_OPTS.headers },
+  credentials: FETCH_OPTS.credentials,
+  body: JSON.stringify({student_id:sid,action_type})
+}).then(r=>r.json()).catch(()=>({message:'Network error'}));
+
           toast(r.message||'Logged');
           menu.classList.add('hidden');
           if(AWAY_ACTIONS.has(action_type)) markStudentAway(sid); else markStudentBack(sid);
@@ -718,9 +754,13 @@ if (hasStudent) {
     async function saveSeating(){
       seats.forEach((s,i)=>{ s.seat_no=i+1; });
       const payload=seats.map(s=>({seat_no:s.seat_no,student_id:s.student_id??null,x:Math.round(s.x??0),y:Math.round(s.y??0)}));
-      const r=await fetch('../../api/save_seating.php',{
-        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({seating:payload})
-      }).then(r=>r.json()).catch(()=>({ok:false}));
+const r=await fetch(`${API}/save_seating.php`,{
+  method:'POST',
+  headers:{ 'Content-Type':'application/json', ...FETCH_OPTS.headers },
+  credentials: FETCH_OPTS.credentials,
+  body: JSON.stringify({seating:payload})
+}).then(r=>r.json()).catch(()=>({ok:false}));
+
       if(r?.ok) toast('Layout saved'); else toast(r?.message||'Save failed','error');
     }
 
