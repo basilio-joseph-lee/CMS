@@ -121,7 +121,8 @@ async function buildMatcher(){
   let done = 0, total = roster.length;
 
   for (const row of roster){
-    const url = normalizePath(row.face_image_path);
+const url = row.face_image_url || normalizePath(row.face_image_path);
+
     if (!url) { setStatus(`Preparing faces… ${done}/${total}`); continue; }
 
     try{
