@@ -298,22 +298,25 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
         // Build an absolute API base that works in subfolders and on production
 // Build an absolute API base that works in subfolders and on production
+// Build an absolute API base that works in local and deployment
 const API = <?php
-  // --- Flexible, works local and deployed ---
+  // --- Detect HTTPS (supports reverse proxy) ---
   $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
          || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
   $scheme = $https ? 'https' : 'http';
   $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
 
+  // --- Normalize the path ---
   $path = $_SERVER['PHP_SELF'] ?? '/';
-  // Normalize case-insensitive variants of “/user/...” path
-  $base = preg_replace('~(?i)/user/.*$~', '', $path);   // strip anything after /user/
-  $base = rtrim($base, '/');                            // remove trailing slash
+  // Remove anything after /user/... (case-insensitive)
+  $base = preg_replace('~(?i)/user/.*$~', '', $path);
+  $base = rtrim($base, '/');
 
-  // Compose final API URL (e.g. http://localhost/CMS/api or https://mysite/api)
+  // --- Compose final API base ---
   $apiBase = $base === '' ? "$scheme://$host/api" : "$scheme://$host$base/api";
   echo json_encode($apiBase);
 ?>;
+
 
 
 
