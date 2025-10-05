@@ -3,7 +3,8 @@
 // Returns ALL students that have a stored face photo (no class filter).
 header('Content-Type: application/json');
 
-$conn = @new mysqli('localhost','root','','cms');
+include("../config/db.php");
+
 if ($conn->connect_error) { echo '[]'; exit; }
 $conn->set_charset('utf8mb4');
 
