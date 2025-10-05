@@ -3,7 +3,7 @@
  * STUDENT DASHBOARD — primary student UI
  * Flow: face_login.php → select_subject.php → dashboard.php
  */
-session_name('CMS_STUDENT');
+
 if (session_status() === PHP_SESSION_NONE) { session_start(); }
 include "../config/db.php";
 
