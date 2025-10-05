@@ -3,9 +3,9 @@
  * STUDENT DASHBOARD — primary student UI
  * Flow: face_login.php → select_subject.php → dashboard.php
  */
-
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
-include "../config/db.php";
+session_name('CMS_STUDENT');
+include __DIR__ . '/../config/db.php';
+header('Content-Type: application/json; charset=utf-8');
 
 if (!isset($_SESSION['student_id'])) { header("Location: ../index.php"); exit; }
 
