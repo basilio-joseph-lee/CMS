@@ -299,15 +299,23 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
         // Build an absolute API base that works in subfolders and on production
 // Build an absolute API base that works in subfolders and on production
 const API = <?php
-  // Honor reverse proxy HTTPS too
-  $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || 
-            (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
+  // --- Flexible, works local and deployed ---
+  $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+         || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
   $scheme = $https ? 'https' : 'http';
   $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-  // current file: /CMS/user/teacher/thisfile.php -> go up 3 levels to reach /CMS
-  $base   = rtrim(dirname($_SERVER['PHP_SELF'] ?? '/', 3), '/');
-  echo json_encode("$scheme://$host$base/api");
+
+  $path = $_SERVER['PHP_SELF'] ?? '/';
+  // Normalize case-insensitive variants of “/user/...” path
+  $base = preg_replace('~(?i)/user/.*$~', '', $path);   // strip anything after /user/
+  $base = rtrim($base, '/');                            // remove trailing slash
+
+  // Compose final API URL (e.g. http://localhost/CMS/api or https://mysite/api)
+  $apiBase = $base === '' ? "$scheme://$host/api" : "$scheme://$host$base/api";
+  echo json_encode($apiBase);
 ?>;
+
+
 
     // Always send cookies and mark as XHR (some hosts/mod_security like this)
     const FETCH_OPTS = {
