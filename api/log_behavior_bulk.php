@@ -1,6 +1,9 @@
 <?php
-header('Content-Type: application/json');
-require_once "../config/db.php"; // adjust path if needed
+include __DIR__ . '/../config/db.php';      // starts the session (once) + DB
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+
+ob_start();                                  // buffer any accidental output
 
 function json_fail($msg, $code = 400){
   http_response_code($code);

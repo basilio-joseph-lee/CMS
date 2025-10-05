@@ -7,7 +7,12 @@
 header('Content-Type: application/json');
 date_default_timezone_set('Asia/Manila');
 
-include '../config/db.php';
+include __DIR__ . '/../config/db.php';      // starts the session (once) + DB
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+
+ob_start();                                  // buffer any accidental output
+
 session_name('CMS_STUDENT');
 if (session_status() === PHP_SESSION_NONE) {
     session_start();

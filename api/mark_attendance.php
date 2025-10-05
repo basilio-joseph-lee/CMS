@@ -1,7 +1,11 @@
 <?php
 // api/mark_attendance.php
-session_start();
-header('Content-Type: application/json');
+include __DIR__ . '/../config/db.php';      // starts the session (once) + DB
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+
+ob_start();                                  // buffer any accidental output
+
 
 if (!isset($_SESSION['teacher_id'])) { http_response_code(403); echo json_encode(['message'=>'Forbidden']); exit; }
 
