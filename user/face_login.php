@@ -126,17 +126,17 @@ const url = row.face_image_url || normalizePath(row.face_image_path);
     if (!url) { setStatus(`Preparing faces… ${done}/${total}`); continue; }
 
     try{
-      // Loading through Image to avoid CORS tainting and give clearer errors in console
-// Load via fetch -> blob -> objectURL to avoid CORS/Hotlink issues on shared hosting
-const blob = await fetch(url, { cache: 'no-store' }).then(r => {
-  if (!r.ok) throw new Error('Image HTTP ' + r.status + ': ' + url);
-  return r.blob();
-});
-const img = await new Promise((resolve) => {
-  const i = new Image();
-  i.onload  = () => resolve(i);
-  i.src     = URL.createObjectURL(blob);
-});
+      // Load via fetch -> blob -> objectURL to avoid CORS/Hotlink issues on shared hosting
+      const blob = await fetch(url, { cache: 'no-store' }).then(r => {
+        if (!r.ok) throw new Error('Image HTTP ' + r.status + ': ' + url);
+        return r.blob();
+      });
+      const img = await new Promise((resolve) => {
+        const i = new Image();
+        i.onload  = () => resolve(i);
+        i.src     = URL.createObjectURL(blob);
+      });
+
 
 
       const det = await detectOneWithProfiles(img);
