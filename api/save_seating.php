@@ -16,8 +16,7 @@ $sj = intval($_SESSION['subject_id'] ?? 0);
 $raw = file_get_contents('php://input');
 $payload = json_decode($raw, true);
 $items = $payload['seating'] ?? [];
-
-$conn = new mysqli("localhost","root","","cms");
+    include __DIR__ . '/../config/db.php';
 if ($conn->connect_error) {
   http_response_code(500);
   echo json_encode(['ok'=>false,'message'=>'DB error']);

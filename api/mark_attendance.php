@@ -17,7 +17,7 @@ $status = $in['status'] ?? '';
 $valid = ['Present','Absent','Late'];
 if (!$student_id || !in_array($status,$valid,true)) { http_response_code(400); echo json_encode(['message'=>'Bad request']); exit; }
 
-$conn = new mysqli("localhost","root","","cms");
+    include __DIR__ . '/../config/db.php';
 if ($conn->connect_error) { http_response_code(500); echo json_encode(['message'=>'DB error']); exit; }
 
 $sql = "INSERT INTO attendance_records (student_id, subject_id, advisory_id, school_year_id, status) VALUES (?,?,?,?,?)";

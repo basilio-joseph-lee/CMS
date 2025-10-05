@@ -9,7 +9,7 @@ if (!isset($_SESSION['teacher_id'])) {
   exit;
 }
 
-$conn = new mysqli("localhost","root","","cms");
+    include __DIR__ . '/../config/db.php';
 if ($conn->connect_error) {
   http_response_code(500);
   echo json_encode(['ok'=>false,'message'=>'DB error']);
