@@ -1,6 +1,5 @@
 <?php
 session_start();
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -38,7 +37,7 @@ session_start();
 
 <script>
 /* ---------- Config ---------- */
-const MODELS_URL = '../models';          // your CMS/models folder (with *.json + *.bin)
+const MODELS_URL = '../models';          // default models folder (with *.json + *.bin)
 const DISTANCE_THRESHOLD = 0.6;          // typical for face-api FaceMatcher
 const PING_MS = 900;                     // scan interval
 
@@ -72,10 +71,23 @@ async function waitForFaceApi(){
   throw new Error('face-api.js failed to load');
 }
 
+// Probe models path: try MODELS_URL, then /CMS/models (common on shared hosting)
+async function resolveModelsUrl() {
+  const probe = (base) =>
+    fetch(`${base}/face_recognition_model-weights_manifest.json`, { cache: 'no-store' })
+      .then(r => r.ok).catch(() => false);
+
+  if (await probe(MODELS_URL)) return MODELS_URL;
+  const alt = '/CMS/models';
+  if (MODELS_URL !== alt && (await probe(alt))) return alt;
+  return MODELS_URL; // fallback (will error later if truly missing)
+}
+
 async function loadModels(){
-  await faceapi.nets.tinyFaceDetector.loadFromUri(MODELS_URL);
-  await faceapi.nets.faceLandmark68Net.loadFromUri(MODELS_URL);
-  await faceapi.nets.faceRecognitionNet.loadFromUri(MODELS_URL);
+  const base = await resolveModelsUrl();
+  await faceapi.nets.tinyFaceDetector.loadFromUri(base);
+  await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+  await faceapi.nets.faceRecognitionNet.loadFromUri(base);
 }
 
 async function startCam(){
@@ -121,8 +133,7 @@ async function buildMatcher(){
   let done = 0, total = roster.length;
 
   for (const row of roster){
-const url = row.face_image_url || normalizePath(row.face_image_path);
-
+    const url = row.face_image_url || normalizePath(row.face_image_path);
     if (!url) { setStatus(`Preparing faces… ${done}/${total}`); continue; }
 
     try{
@@ -136,8 +147,6 @@ const url = row.face_image_url || normalizePath(row.face_image_path);
         i.onload  = () => resolve(i);
         i.src     = URL.createObjectURL(blob);
       });
-
-
 
       const det = await detectOneWithProfiles(img);
       if (det){
