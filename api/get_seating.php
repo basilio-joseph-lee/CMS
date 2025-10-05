@@ -13,7 +13,7 @@ $sy = intval($_SESSION['school_year_id'] ?? 0);
 $ad = intval($_SESSION['advisory_id'] ?? 0);
 $sj = intval($_SESSION['subject_id'] ?? 0);
 
-$conn = new mysqli("localhost","root","","cms");
+require_once __DIR__ . '/../config/db.php';
 if ($conn->connect_error) {
   http_response_code(500);
   echo json_encode(['seating'=>[]]);
