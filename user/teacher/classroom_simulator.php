@@ -1,8 +1,11 @@
 <?php
 include "../../config/db.php";
+session_start();
 
-
-
+if (!isset($_SESSION['teacher_id'])) {
+  header("Location: teacher_login.php");
+  exit;
+}
 
 $teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
 $subject_id     = intval($_SESSION['subject_id']);
