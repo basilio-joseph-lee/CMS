@@ -305,13 +305,17 @@ const API = <?php
          || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
   $scheme = $https ? 'https' : 'http';
   $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-  $path   = $_SERVER['PHP_SELF'] ?? '/';
-  $base   = preg_replace('~(?i)/user/.*$~', '', $path);
-  $base   = rtrim($base, '/');
+
+  // --- Normalize the path ---
+  $path = $_SERVER['PHP_SELF'] ?? '/';
+  // Remove anything after /user/... (case-insensitive)
+  $base = preg_replace('~(?i)/user/.*$~', '', $path);
+  $base = rtrim($base, '/');
+
+  // --- Compose final API base ---
   $apiBase = $base === '' ? "$scheme://$host/api" : "$scheme://$host$base/api";
   echo json_encode($apiBase);
 ?>;
-
 
 
 
