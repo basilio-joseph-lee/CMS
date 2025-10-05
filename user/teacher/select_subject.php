@@ -10,10 +10,6 @@ session_start();
 date_default_timezone_set('Asia/Manila');
 
 // Allow either teacher or student
-if (!isset($_SESSION['teacher_id']) && !isset($_SESSION['student_id'])) {
-    header("Location: ../index.php"); // go back to /user/index.php
-    exit;
-}
 include '../../config/db.php';
 
 
