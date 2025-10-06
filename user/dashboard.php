@@ -3,9 +3,8 @@
  * STUDENT DASHBOARD — primary student UI
  * Flow: face_login.php → select_subject.php → dashboard.php
  */
-session_name('CMS_STUDENT');
-include __DIR__ . '/../config/db.php';
-header('Content-Type: application/json; charset=utf-8');
+
+session_start();
 
 if (!isset($_SESSION['student_id'])) { header("Location: ../index.php"); exit; }
 
@@ -102,7 +101,19 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
         <p class="text-sm text-gray-700 mt-1">
           <?= htmlspecialchars($class_name) ?> • <?= htmlspecialchars($subject_name) ?> • <?= htmlspecialchars($year_label) ?>
         </p>
-        <p class="text-gray-700 mt-2">Welcome, <b><?= htmlspecialchars($fullname) ?></b></p>
+        <!-- Logout Button -->
+<div class="mt-3">
+  <a
+    href="../config/logout.php?role=student"
+    class="inline-flex items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm sm:text-base font-semibold shadow-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-300 transition"
+  >
+    🚪 Logout
+  </a>
+    <button id="btnRelog"
+    class="inline-flex items-center justify-center rounded-xl bg-green-600 px-4 py-2 text-sm sm:text-base font-semibold shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-300 transition">
+    👤 Re-log (Face)
+  </button>
+</div>
       </div>
       <div class="card px-4 py-3">
         <div class="text-xs text-gray-500 font-bold uppercase">Current status</div>
@@ -223,8 +234,10 @@ function paintStatus(action, ts){
 // Fetch current behavior
 async function loadStatus(){
   try{
-    const res = await fetch('../api/get_behavior_status.php', {cache:'no-store'});
+    const res = await fetch('../api/get_behavior_status.php', { cache:'no-store', credentials:'include' });
+    if (!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
+
     let my = null;
     if(Array.isArray(data)){
       my = data.find(r=>String(r.student_id)===String(student_id));
@@ -245,14 +258,20 @@ async function logAction(action_type){
   // optimistic UI
   paintStatus(action_type, new Date().toISOString());
   try{
-    const resp = await fetch('../api/log_behavior.php', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ student_id, action_type })
-    });
-    const r = await resp.json();
-    toast(r?.message || 'Saved');
-    await loadStatus(); // reconcile
+const resp = await fetch('../api/log_behavior.php', {
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  credentials:'include',
+  body: JSON.stringify({ student_id, action_type })
+});
+if (!resp.ok) {
+  const txt = await resp.text();
+  throw new Error('HTTP '+resp.status+' — '+txt);
+}
+const r = await resp.json();
+toast(r?.message || 'Saved');
+await loadStatus(); // reconcile
+
   }catch(e){
     toast('Network error','err');
   }finally{
