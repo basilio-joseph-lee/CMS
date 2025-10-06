@@ -1,13 +1,60 @@
 <?php
-session_start();
+/**
+ * face_login.php — portable across localhost/CMS and production domain
+ * Creates a consistent student session cookie visible across the app.
+ */
+
+function is_https() {
+  if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') return true;
+  if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') return true;
+  return false;
+}
+function cookie_domain_for_host($host) {
+  // Strip port if any
+  $h = preg_replace('/:\d+$/', '', (string)$host);
+  // On localhost or IP, don't set domain (let browser default)
+  if ($h === 'localhost' || filter_var($h, FILTER_VALIDATE_IP)) return '';
+  return $h;
+}
+function base_path() {
+  // If your app lives under /CMS on localhost, use /CMS; else use /
+  $script = $_SERVER['SCRIPT_NAME'] ?? '/';
+  if (strpos($script, '/CMS/') !== false || substr($script, -4) === '/CMS') return '/CMS';
+  return '/';
+}
+
+$HTTPS   = is_https();
+$DOMAIN  = cookie_domain_for_host($_SERVER['HTTP_HOST'] ?? '');
+$PATH    = base_path();
+
+// Use one consistent session name for students site-wide
+session_name('CMS_STUDENT');
+session_set_cookie_params([
+  'lifetime' => 0,
+  'path'     => $PATH,       // 👈 /CMS on localhost, / (or /CMS) on prod
+  'domain'   => $DOMAIN ?: '', // omit on localhost/IP
+  'secure'   => $HTTPS,
+  'httponly' => true,
+  'samesite' => 'Lax',
+]);
+if (session_status() === PHP_SESSION_NONE) session_start();
+
+// Clear any stale subject/advisory context so selector shows ALL classes
+unset(
+  $_SESSION['subject_id'],
+  $_SESSION['subject_name'],
+  $_SESSION['advisory_id'],
+  $_SESSION['school_year_id'],
+  $_SESSION['class_name'],
+  $_SESSION['year_label']
+);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Face Recognition Login</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Load face-api once (no duplicates, no defer). We'll wait for it in JS. -->
   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <style>
     body {
@@ -37,16 +84,17 @@ session_start();
 
 <script>
 /* ---------- Config ---------- */
-const MODELS_URL = '../models';          // default models folder (with *.json + *.bin)
-const DISTANCE_THRESHOLD = 0.6;          // typical for face-api FaceMatcher
-const PING_MS = 900;                     // scan interval
-
-// Detector profiles (we’ll try a few so reference JPGs don’t fail easily)
+const MODELS_URL = '../models';
+const DISTANCE_THRESHOLD = 0.6;
+const PING_MS = 900;
 const DET_PROFILES = [
   { inputSize: 512, scoreThreshold: 0.30 },
   { inputSize: 416, scoreThreshold: 0.30 },
   { inputSize: 320, scoreThreshold: 0.25 },
 ];
+
+// PHP → JS: where is app base? ("/CMS" on localhost, "/" or "/CMS" on prod)
+const APP_BASE = <?= json_encode($PATH) ?>;
 
 let stream, matcher = null, roster = [], indexByLabel = new Map();
 let scanTimer = null, ready = false;
@@ -54,153 +102,92 @@ let scanTimer = null, ready = false;
 function setStatus(txt){ document.getElementById('status').textContent = txt; }
 function normalizePath(p){
   if(!p) return '';
-  p = String(p).trim().replace(/^\.?\//,'');    // strip leading ./ or /
-  // If absolute http(s) or data URL -> return as is
+  p = String(p).trim().replace(/^\.?\//,'');
   if (p.startsWith('http://') || p.startsWith('https://') || p.startsWith('data:')) return p;
-  // If it was absolute like /CMS/..., keep it absolute
   if (p.startsWith('CMS/') || p.startsWith('/CMS/')) return p.startsWith('/') ? p : '/' + p;
-  // Otherwise treat as path under the web root and climb from /user/
   return '../' + p;
 }
 
-async function waitForFaceApi(){
-  for (let i=0;i<200;i++){  // ~10s
-    if (window.faceapi) return;
-    await new Promise(r=>setTimeout(r,50));
-  }
-  throw new Error('face-api.js failed to load');
-}
-
-// Probe models path: try MODELS_URL, then /CMS/models (common on shared hosting)
+async function waitForFaceApi(){ for (let i=0;i<200;i++){ if (window.faceapi) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('face-api.js failed to load'); }
 async function resolveModelsUrl() {
-  const probe = (base) =>
-    fetch(`${base}/face_recognition_model-weights_manifest.json`, { cache: 'no-store' })
-      .then(r => r.ok).catch(() => false);
-
+  const probe = (base) => fetch(`${base}/face_recognition_model-weights_manifest.json`, { cache:'no-store' }).then(r => r.ok).catch(()=>false);
   if (await probe(MODELS_URL)) return MODELS_URL;
-  const alt = '/CMS/models';
+  const alt = APP_BASE + '/models';
   if (MODELS_URL !== alt && (await probe(alt))) return alt;
-  return MODELS_URL; // fallback (will error later if truly missing)
+  return MODELS_URL;
 }
-
-async function loadModels(){
-  const base = await resolveModelsUrl();
-  await faceapi.nets.tinyFaceDetector.loadFromUri(base);
-  await faceapi.nets.faceLandmark68Net.loadFromUri(base);
-  await faceapi.nets.faceRecognitionNet.loadFromUri(base);
-}
-
-async function startCam(){
-  const video = document.getElementById('video');
-  stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
-  video.srcObject = stream;
-}
-
-async function fetchRoster(){
-  const res = await fetch('../api/list_faces_all.php', { method:'POST' });
-  roster = await res.json();
-  if (!Array.isArray(roster)) roster = [];
-  console.log('Roster:', roster);
-}
+async function loadModels(){ const base = await resolveModelsUrl(); await faceapi.nets.tinyFaceDetector.loadFromUri(base); await faceapi.nets.faceLandmark68Net.loadFromUri(base); await faceapi.nets.faceRecognitionNet.loadFromUri(base); }
+async function startCam(){ const video = document.getElementById('video'); stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false }); video.srcObject = stream; }
+async function fetchRoster(){ const res = await fetch('../api/list_faces_all.php',{method:'POST'}); roster = await res.json(); if (!Array.isArray(roster)) roster = []; }
 
 function drawBox(det, label){
-  const canvas = document.getElementById('overlay');
-  const ctx = canvas.getContext('2d');
+  const canvas = document.getElementById('overlay'); const ctx = canvas.getContext('2d');
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if (!det) return;
   const { box } = det.detection;
-  ctx.strokeStyle = 'lime'; ctx.lineWidth = 2; ctx.strokeRect(box.x, box.y, box.width, box.height);
+  ctx.strokeStyle='lime'; ctx.lineWidth=2; ctx.strokeRect(box.x,box.y,box.width,box.height);
   ctx.fillStyle='rgba(0,0,0,.6)'; const tag = String(label||'');
   const tw = Math.min(160, ctx.measureText(tag).width + 10);
   ctx.fillRect(box.x, Math.max(0, box.y-18), tw, 18);
   ctx.fillStyle='white'; ctx.font='12px sans-serif'; ctx.fillText(tag, box.x+4, Math.max(12, box.y-4));
 }
 
-// Try multiple detector profiles on one image until we get a face + descriptor
 async function detectOneWithProfiles(img){
   for (const prof of DET_PROFILES){
-    const det = await faceapi
-      .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions(prof))
-      .withFaceLandmarks()
-      .withFaceDescriptor();
+    const det = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions(prof)).withFaceLandmarks().withFaceDescriptor();
     if (det && det.descriptor) return det;
   }
   return null;
 }
 
 async function buildMatcher(){
-  const labeled = [];
-  let done = 0, total = roster.length;
-
+  const labeled=[]; let done=0, total=roster.length;
   for (const row of roster){
     const url = row.face_image_url || normalizePath(row.face_image_path);
     if (!url) { setStatus(`Preparing faces… ${done}/${total}`); continue; }
-
-    try{
-      // Load via fetch -> blob -> objectURL to avoid CORS/Hotlink issues on shared hosting
-      const blob = await fetch(url, { cache: 'no-store' }).then(r => {
-        if (!r.ok) throw new Error('Image HTTP ' + r.status + ': ' + url);
-        return r.blob();
-      });
-      const img = await new Promise((resolve) => {
-        const i = new Image();
-        i.onload  = () => resolve(i);
-        i.src     = URL.createObjectURL(blob);
-      });
-
-      const det = await detectOneWithProfiles(img);
+    try {
+      const blob = await fetch(url, { cache:'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.blob(); });
+      const img  = await new Promise(res => { const i=new Image(); i.onload=()=>res(i); i.src=URL.createObjectURL(blob); });
+      const det  = await detectOneWithProfiles(img);
       if (det){
         const label = String(row.student_id);
         labeled.push(new faceapi.LabeledFaceDescriptors(label, [det.descriptor]));
         indexByLabel.set(label, { id: row.student_id, name: row.fullname });
-      } else {
-        console.warn('No face found in reference image:', url);
       }
-    }catch(err){
-      console.warn('Reference image error:', err);
-    }finally{
-      done++;
-      setStatus(`Preparing faces… ${done}/${total}`);
-    }
+    } catch(e){ console.warn('Roster image issue:', e); }
+    finally { done++; setStatus(`Preparing faces… ${done}/${total}`); }
   }
-
   if (!labeled.length) throw new Error('No reference faces loaded.');
   matcher = new faceapi.FaceMatcher(labeled, DISTANCE_THRESHOLD);
 }
 
 async function scanLoop(){
   if (!ready || !matcher) return;
-
   const video = document.getElementById('video');
-  // Use our most robust profile when scanning live
-  const det = await faceapi
-    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 }))
-    .withFaceLandmarks()
-    .withFaceDescriptor();
-
-  if (!det){
-    setStatus('🔍 Scanning for a face…'); drawBox(null,''); return;
-  }
-
+  const det = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 })).withFaceLandmarks().withFaceDescriptor();
+  if (!det){ setStatus('🔍 Scanning for a face…'); drawBox(null,''); return; }
   const best = matcher.findBestMatch(det.descriptor);
   if (best && best.label !== 'unknown'){
-    const meta = indexByLabel.get(best.label) || { name: 'Student', id: best.label };
+    const meta = indexByLabel.get(best.label) || { name:'Student', id: best.label };
     const confPct = Math.max(0, Math.min(99, Math.round((1 - best.distance) * 100)));
     drawBox(det, `${meta.name} ${confPct}%`);
-    setStatus(`✅ Recognized: ${meta.name} (${confPct}%) — signing in…`);
+    setStatus(`✅ Recognized: ${meta.name} (${confPct}%) — logging in…`);
     clearInterval(scanTimer);
 
-    const body = new URLSearchParams({ student_id: String(meta.id) });
-    const res  = await fetch('../config/login_by_student.php', {
-      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
-    }).then(r=>r.json()).catch(()=>null);
+    try{
+      const body = new URLSearchParams({ student_id: String(meta.id) });
+      const res  = await fetch('../config/login_by_student.php', {
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
+      }).then(r=>r.json());
 
-    if (res && res.success){
-      const hasContext = <?= (isset($_SESSION['subject_id']) && isset($_SESSION['advisory_id'])) ? 'true' : 'false' ?>;
-      window.location.href = hasContext ? 'dashboard.php?new_login=1' : 'teacher/select_subject.php';
-    } else {
-      setStatus('⚠️ Login failed on server. Scanning again…');
-      scanTimer = setInterval(scanLoop, PING_MS);
+      if (res && res.success){
+        // Always go through selector (sets class context + attendance)
+        window.location.href = APP_BASE + '/user/teacher/select_subject.php';
+      } else {
+        setStatus('⚠️ Login failed on server. Retrying…'); scanTimer = setInterval(scanLoop, PING_MS);
+      }
+    } catch(e) {
+      console.error(e); setStatus('❌ Network/login error.'); scanTimer = setInterval(scanLoop, PING_MS);
     }
   } else {
     drawBox(det, 'Unknown'); setStatus('❌ Face not recognized.');
@@ -209,31 +196,14 @@ async function scanLoop(){
 
 async function init(){
   try{
-    setStatus('Loading models…');
-    await waitForFaceApi();
-    await loadModels();
-
-    setStatus('Starting camera…');
-    await startCam();
-
-    setStatus('Loading face roster…');
-    await fetchRoster();
-    if (!roster.length){
-      throw new Error('No reference faces from API. (Check /api/list_faces_all.php)');
-    }
-
-    setStatus('Preparing faces…');
-    await buildMatcher();
-
-    ready = true;
-    setStatus('🔍 Scanning for a face…');
+    setStatus('Loading models…'); await waitForFaceApi(); await loadModels();
+    setStatus('Starting camera…'); await startCam();
+    setStatus('Loading face roster…'); await fetchRoster(); if (!roster.length) throw new Error('No reference faces from API.');
+    setStatus('Preparing faces…'); await buildMatcher();
+    ready = true; setStatus('🔍 Scanning for a face…');
     scanTimer = setInterval(scanLoop, PING_MS);
-  }catch(e){
-    console.error(e);
-    setStatus('🚫 Setup error: ' + e.message);
-  }
+  }catch(e){ console.error(e); setStatus('🚫 Setup error: ' + e.message); }
 }
-
 window.addEventListener('load', init);
 </script>
 </body>

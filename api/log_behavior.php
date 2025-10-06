@@ -4,36 +4,40 @@
 // Called by: dashboard.php, classroom_simulator.php, mobile parent app, etc.
 // ============================================================================
 
-header('Content-Type: application/json');
-date_default_timezone_set('Asia/Manila');
-
-include __DIR__ . '/../config/db.php';      // starts the session (once) + DB
-header('Content-Type: application/json; charset=utf-8');
-header('Cache-Control: no-store');
-
-ob_start();                                  // buffer any accidental output
-
 session_name('CMS_STUDENT');
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+error_reporting(E_ERROR | E_PARSE);
+
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
+date_default_timezone_set('Asia/Manila');
+
+// buffer any accidental output; we'll clear it before sending JSON
+ob_start();
+
+include __DIR__ . '/../config/db.php'; // DB only; do NOT (re)start session here
+
 
 $response = ['success' => false, 'message' => 'Unknown error'];
 
 try {
-    // --- Ensure logged in ---
-    $student_id = $_SESSION['student_id'] ?? ($_POST['student_id'] ?? null);
-    if (!$student_id) {
-        throw new Exception('Unauthorized access: student not logged in.');
-    }
+// Accept either JSON or form-urlencoded body
+$raw  = file_get_contents('php://input');
+$data = json_decode($raw, true);
+if (!is_array($data)) $data = $_POST;
 
-    // --- Get POST data ---
-    // Accept either JSON or form-urlencoded body
-    $raw = file_get_contents('php://input');
-    $data = json_decode($raw, true);
-    if (!is_array($data)) $data = $_POST;
+// Prefer session; fall back to JSON body
+$student_id = isset($_SESSION['student_id']) ? (int)$_SESSION['student_id']
+            : (int)($data['student_id'] ?? 0);
 
-    $action_type = trim($data['action_type'] ?? '');
+if ($student_id <= 0) {
+    throw new Exception('Unauthorized access: student not logged in.');
+}
+
+$action_type = trim((string)($data['action_type'] ?? ''));
+
     if ($action_type === '') throw new Exception('Missing action_type.');
 
     // --- Allowlist ---
@@ -80,4 +84,9 @@ try {
     $response = ['success' => false, 'message' => $e->getMessage()];
 }
 
-echo json_encode($response, JSON_UNESCAPED_UNICODE);
+$payload = json_encode($response, JSON_UNESCAPED_UNICODE);
+
+ob_end_clean(); // drop any accidental output
+http_response_code($response['success'] ? 200 : 400);
+echo $payload;
+exit;
