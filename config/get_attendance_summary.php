@@ -1,49 +1,34 @@
 <?php
-// cms/config/get_attendance_summary.php
-header('Content-Type: application/json');
+require __DIR__ . '/db.php';
 
-include("db.php");
-if ($conn->connect_error) {
-  http_response_code(500);
-  echo json_encode(['status'=>'error','message'=>'DB error']);
+$studentId = ip('student_id');
+if (!$studentId) {
+  echo json_encode(['status' => 'error', 'message' => 'Missing student_id']);
   exit;
 }
 
-$student_id = intval($_POST['student_id'] ?? 0);
-$school_year_id = intval($_POST['school_year_id'] ?? 0);
+$conditions = ['student_id = :sid'];
+$params     = [':sid' => $studentId];
 
-if ($student_id <= 0) {
-  echo json_encode(['status'=>'error','message'=>'student_id required']);
-  exit;
-}
-
-// Resolve active school year if not provided
-if ($school_year_id <= 0) {
-  $rs = $mysqli->query("SELECT school_year_id FROM school_years WHERE status='active' LIMIT 1");
-  if ($rs && $rs->num_rows) {
-    $school_year_id = intval($rs->fetch_assoc()['school_year_id']);
-  }
-}
+if ($sy = sp('school_year_id')) { $conditions[] = 'school_year_id = :sy'; $params[':sy'] = $sy; }
+if ($sub = sp('subject_id'))     { $conditions[] = 'subject_id = :sub';     $params[':sub'] = $sub; }
+if ($adv = sp('advisory_id'))    { $conditions[] = 'advisory_id = :adv';    $params[':adv'] = $adv; }
 
 $sql = "
-  SELECT status, COUNT(*) AS c
+  SELECT
+    SUM(status='Present') AS present,
+    SUM(status='Absent')  AS absent,
+    SUM(status='Late')    AS late
   FROM attendance_records
-  WHERE student_id = ?
-    AND (? = 0 OR school_year_id = ?)
-  GROUP BY status
-";
-$stmt = $mysqli->prepare($sql);
-$stmt->bind_param("iii", $student_id, $school_year_id, $school_year_id);
-$stmt->execute();
-$res = $stmt->get_result();
+  WHERE " . implode(' AND ', $conditions);
 
-$present = 0; $absent = 0; $late = 0;
-while ($row = $res->fetch_assoc()) {
-  switch ($row['status']) {
-    case 'Present': $present = (int)$row['c']; break;
-    case 'Absent':  $absent  = (int)$row['c']; break;
-    case 'Late':    $late    = (int)$row['c']; break;
-  }
-}
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$row = $stmt->fetch() ?: ['present' => 0, 'absent' => 0, 'late' => 0];
 
-echo json_encode(['status'=>'success','present'=>$present,'absent'=>$absent,'late'=>$late]);
+echo json_encode([
+  'status'  => 'success',
+  'present' => (int)$row['present'],
+  'absent'  => (int)$row['absent'],
+  'late'    => (int)$row['late'],
+]);
