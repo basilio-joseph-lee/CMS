@@ -1,12 +1,15 @@
 <?php
 // CMS/user/student/join_quiz.php  (name-based; waits for ONGOING → shows leaderboard after ENDED)
 
+
+
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 $code = strtoupper(trim($_GET['code'] ?? ''));
 
-$conn = new mysqli("localhost","root","","cms");
+include __DIR__ . '/../../config/db.php'; // uses $conn from your config
 $conn->set_charset('utf8mb4');
+
 
 // Look up session by code
 $session_id = 0;
