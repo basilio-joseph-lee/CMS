@@ -19,7 +19,7 @@ error_reporting(E_ERROR | E_PARSE);
 // ---- DB ----
 require_once __DIR__ . '/db.php'; // defines $conn
 if (!isset($conn) || !($conn instanceof mysqli) || $conn->connect_error) {
-  echo json_encode([]); // consistent array for client
+  echo json_encode([]);
   exit;
 }
 $conn->set_charset('utf8mb4');
@@ -35,8 +35,13 @@ if ($parent_id <= 0) {
   exit;
 }
 
-// ---- Helpers ----
-function make_absolute_url(?string $raw): ?string {
+/**
+ * Build an absolute URL for an avatar by:
+ *  - respecting absolute URLs already stored,
+ *  - trying several normalized web paths,
+ *  - checking the filesystem (DOCUMENT_ROOT) to pick the one that actually exists.
+ */
+function resolve_avatar_url(?string $raw): ?string {
   if ($raw === null) return null;
   $p = trim($raw);
   if ($p === '') return null;
@@ -44,24 +49,47 @@ function make_absolute_url(?string $raw): ?string {
   // Already absolute?
   if (preg_match('~^https?://~i', $p)) return $p;
 
-  // Build base from request
+  // Base URL
   $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') == '443');
   $scheme  = $isHttps ? 'https' : 'http';
   $host    = $_SERVER['HTTP_HOST'] ?? 'localhost';
   $base    = $scheme . '://' . $host;
 
-  // Normalize CMS prefix: on production (myschoolness.site) drop leading "/CMS"
-  if (stripos($host, 'myschoolness.site') !== false) {
-    $p = preg_replace('#^/CMS/#i', '/', $p); // "/CMS/avatar/8.png" -> "/avatar/8.png"
+  // Normalize into candidate web paths (leading slash)
+  $p1 = '/' . ltrim($p, '/');               // as-is
+  $candidates = [$p1];
+
+  // Drop "/CMS" prefix if present (prod often serves without it)
+  if (stripos($p1, '/CMS/') === 0) {
+    $candidates[] = substr($p1, 4);         // '/CMS/...' -> '/...'
   }
 
-  // Ensure leading slash
-  $p = '/' . ltrim($p, '/');
+  // Common alternate roots some installs use
+  // e.g. '/uploads/avatar/6.png' or '/public/avatar/6.png'
+  if (preg_match('#/avatar/([^/]+\.(?:png|jpe?g|gif|webp))$#i', $p1, $m)) {
+    $file = $m[1];
+    $candidates[] = '/avatar/' . $file;
+    $candidates[] = '/uploads/avatar/' . $file;
+    $candidates[] = '/public/avatar/' . $file;
+  }
 
-  return $base . $p;
+  // De-dupe
+  $candidates = array_values(array_unique($candidates));
+
+  // Try filesystem existence under document root
+  $doc = rtrim($_SERVER['DOCUMENT_ROOT'] ?? '', '/');
+  foreach ($candidates as $webPath) {
+    if ($doc !== '' && file_exists($doc . $webPath)) {
+      return $base . $webPath;
+    }
+  }
+
+  // Fallback: prefer path without /CMS if it was there; else first candidate
+  $fallback = (stripos($p1, '/CMS/') === 0) ? substr($p1, 4) : $p1;
+  return $base . $fallback;
 }
 
-// ---- Query: only real columns from `students` ----
+// ---- Query: real columns from `students` only ----
 $sqlKids = "SELECT student_id, fullname, gender, avatar_path
               FROM students
              WHERE parent_id = ?";
@@ -79,7 +107,7 @@ while ($r = $resKids->fetch_assoc()) {
     'fullname'    => (string)$r['fullname'],
     'gender'      => (string)$r['gender'],
     'avatar_path' => $avatar_path,
-    'avatar_url'  => make_absolute_url($avatar_path), // <- NEW absolute URL for app
+    'avatar_url'  => resolve_avatar_url($avatar_path), // guaranteed best-guess that exists
   ];
 }
 $stKids->close();
