@@ -1,55 +1,50 @@
 <?php
-require __DIR__ . '/db.php';
+// config/get_attendance_calendar.php
+require_once __DIR__ . '/db_connect.php'; // <- change to your actual DB include
+header('Content-Type: application/json');
 
-$studentId = ip('student_id');
-$month     = ip('month');
-$year      = ip('year');
+$student_id     = intval($_POST['student_id'] ?? 0);
+$month          = intval($_POST['month'] ?? 0);
+$year           = intval($_POST['year'] ?? 0);
+$subject_id     = isset($_POST['subject_id']) ? intval($_POST['subject_id']) : null;
+$advisory_id    = isset($_POST['advisory_id']) ? intval($_POST['advisory_id']) : null;
+$school_year_id = isset($_POST['school_year_id']) ? intval($_POST['school_year_id']) : null;
 
-if (!$studentId || !$month || !$year) {
-  echo json_encode(['status' => 'error', 'message' => 'Missing student_id/month/year']);
-  exit;
+if (!$student_id || !$month || !$year) {
+  echo json_encode(['status' => 'error', 'message' => 'Missing parameters.']); exit;
 }
 
-$conditions = ['student_id = :sid', 'MONTH(`timestamp`) = :m', 'YEAR(`timestamp`) = :y'];
-$params     = [':sid' => $studentId, ':m' => $month, ':y' => $year];
+$start = sprintf('%04d-%02d-01 00:00:00', $year, $month);
+$end   = date('Y-m-d H:i:s', strtotime("$start +1 month"));
 
-if ($sy = sp('school_year_id')) { $conditions[] = 'school_year_id = :sy'; $params[':sy'] = $sy; }
-if ($sub = sp('subject_id'))     { $conditions[] = 'subject_id = :sub';     $params[':sub'] = $sub; }
-if ($adv = sp('advisory_id'))    { $conditions[] = 'advisory_id = :adv';    $params[':adv'] = $adv; }
+$sql = "SELECT DATE(`timestamp`) as d, status
+        FROM attendance_records
+        WHERE student_id = ? AND `timestamp` >= ? AND `timestamp` < ?";
+$params = [$student_id, $start, $end];
 
-$sql = "
-  SELECT DATE(`timestamp`) AS d,
-         MAX(CASE status
-             WHEN 'Present' THEN 3
-             WHEN 'Late'    THEN 2
-             WHEN 'Absent'  THEN 1
-             ELSE 0 END) AS score
-  FROM attendance_records
-  WHERE " . implode(' AND ', $conditions) . "
-  GROUP BY DATE(`timestamp`)";
+if ($subject_id)     { $sql .= " AND subject_id = ?";     $params[] = $subject_id; }
+if ($advisory_id)    { $sql .= " AND advisory_id = ?";    $params[] = $advisory_id; }
+if ($school_year_id) { $sql .= " AND school_year_id = ?"; $params[] = $school_year_id; }
 
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$rows = $stmt->fetchAll();
+$sql .= " ORDER BY `timestamp` DESC";
 
-$byDay = [];
-foreach ($rows as $r) {
-  $day   = (int)date('j', strtotime($r['d']));
-  $score = (int)$r['score'];
-  $byDay[$day] = $score === 3 ? 'Present' : ($score === 2 ? 'Late' : ($score === 1 ? 'Absent' : 'No Record'));
-}
+try {
+  $stmt = $pdo->prepare($sql);
+  $stmt->execute($params);
 
-$days = [];
-$daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
-for ($d = 1; $d <= $daysInMonth; $d++) {
-  if (isset($byDay[$d])) {
-    $status = $byDay[$d];
-  } else {
-    // 6 = Sat, 7 = Sun
-    $dow = (int)date('N', strtotime(sprintf('%04d-%02d-%02d', $year, $month, $d)));
-    $status = ($dow >= 6) ? 'No Class' : 'No Record';
+  // Use the latest record per day
+  $byDay = [];
+  while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $day = intval(date('j', strtotime($row['d'])));
+    if (!isset($byDay[$day])) {
+      $byDay[$day] = $row['status']; // 'Present'|'Absent'|'Late'
+    }
   }
-  $days[] = ['day' => $d, 'status' => $status];
-}
 
-echo json_encode(['status' => 'success', 'days' => $days]);
+  $days = [];
+  foreach ($byDay as $d => $st) $days[] = ['day' => $d, 'status' => $st];
+
+  echo json_encode(['status' => 'success', 'days' => $days]);
+} catch (Throwable $e) {
+  echo json_encode(['status' => 'error', 'message' => 'DB error']);
+}
