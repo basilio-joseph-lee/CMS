@@ -73,7 +73,7 @@ $startUtc = (clone $startLocal)->setTimezone($UTC_TZ)->format('Y-m-d H:i:s');
 $endUtc   = (clone $endLocal)->setTimezone($UTC_TZ)->format('Y-m-d H:i:s');
 
 // ---- Fetch children (include section + avatar_path) ----
-$sqlKids = "SELECT student_id, fullname, gender, section, avatar_path
+$sqlKids = "SELECT student_id, fullname, gender, avatar_path
               FROM students
              WHERE parent_id = ?";
 $stKids = $conn->prepare($sqlKids);
