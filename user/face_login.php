@@ -1,7 +1,8 @@
 <?php
 /**
- * face_login.php — portable across localhost/CMS and production domain
- * Creates a consistent student session cookie visible across the app.
+ * face_login.php — production-safe
+ * - Consistent student session (works on localhost/CMS and on your domain)
+ * - Absolute redirects so the browser never treats "user" as a domain
  */
 
 function is_https() {
@@ -10,44 +11,35 @@ function is_https() {
   return false;
 }
 function cookie_domain_for_host($host) {
-  // Strip port if any
   $h = preg_replace('/:\d+$/', '', (string)$host);
-  // On localhost or IP, don't set domain (let browser default)
   if ($h === 'localhost' || filter_var($h, FILTER_VALIDATE_IP)) return '';
   return $h;
 }
-function base_path() {
-  // If your app lives under /CMS on localhost, use /CMS; else use /
+function app_base_path() {
+  // If the app lives under /CMS (e.g., http://localhost/CMS), return "/CMS". Else return "" (root).
   $script = $_SERVER['SCRIPT_NAME'] ?? '/';
-  if (strpos($script, '/CMS/') !== false || substr($script, -4) === '/CMS') return '/CMS';
-  return '/';
+  return (strpos($script, '/CMS/') !== false || preg_match('#/CMS$#', $script)) ? '/CMS' : '';
 }
 
-$HTTPS   = is_https();
-$DOMAIN  = cookie_domain_for_host($_SERVER['HTTP_HOST'] ?? '');
-$PATH    = base_path();
+$HTTPS  = is_https();
+$DOMAIN = cookie_domain_for_host($_SERVER['HTTP_HOST'] ?? '');
+$BASE   = app_base_path();                 // "" on prod root, "/CMS" on localhost/CMS
 
-// Use one consistent session name for students site-wide
+// Use one cookie for all student pages (+ set proper path)
 session_name('CMS_STUDENT');
 session_set_cookie_params([
   'lifetime' => 0,
-  'path'     => $PATH,       // 👈 /CMS on localhost, / (or /CMS) on prod
-  'domain'   => $DOMAIN ?: '', // omit on localhost/IP
+  'path'     => ($BASE === '' ? '/' : $BASE), // "/" or "/CMS"
+  'domain'   => $DOMAIN ?: '',
   'secure'   => $HTTPS,
   'httponly' => true,
   'samesite' => 'Lax',
 ]);
 if (session_status() === PHP_SESSION_NONE) session_start();
 
-// Clear any stale subject/advisory context so selector shows ALL classes
-unset(
-  $_SESSION['subject_id'],
-  $_SESSION['subject_name'],
-  $_SESSION['advisory_id'],
-  $_SESSION['school_year_id'],
-  $_SESSION['class_name'],
-  $_SESSION['year_label']
-);
+// Clear any leftover class context so selector will show all classes
+unset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['advisory_id'],
+      $_SESSION['school_year_id'], $_SESSION['class_name'], $_SESSION['year_label']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -83,8 +75,15 @@ unset(
   </div>
 
 <script>
-/* ---------- Config ---------- */
-const MODELS_URL = '../models';
+/* ---------------- CONFIG ---------------- */
+// PHP → JS: base path ("" for root domain, "/CMS" on localhost/CMS)
+const APP_BASE = <?= json_encode($BASE) ?>;
+// Build absolute URLs (prevents "user" being treated as a domain)
+const ORIGIN = window.location.origin;
+const LOGIN_URL  = ORIGIN + APP_BASE + '/config/login_by_student.php';
+const SELECT_URL = ORIGIN + APP_BASE + '/user/teacher/select_subject.php';
+
+const MODELS_URL_PRIMARY = '../models';
 const DISTANCE_THRESHOLD = 0.6;
 const PING_MS = 900;
 const DET_PROFILES = [
@@ -92,9 +91,6 @@ const DET_PROFILES = [
   { inputSize: 416, scoreThreshold: 0.30 },
   { inputSize: 320, scoreThreshold: 0.25 },
 ];
-
-// PHP → JS: where is app base? ("/CMS" on localhost, "/" or "/CMS" on prod)
-const APP_BASE = <?= json_encode($PATH) ?>;
 
 let stream, matcher = null, roster = [], indexByLabel = new Map();
 let scanTimer = null, ready = false;
@@ -110,22 +106,39 @@ function normalizePath(p){
 
 async function waitForFaceApi(){ for (let i=0;i<200;i++){ if (window.faceapi) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('face-api.js failed to load'); }
 async function resolveModelsUrl() {
-  const probe = (base) => fetch(`${base}/face_recognition_model-weights_manifest.json`, { cache:'no-store' }).then(r => r.ok).catch(()=>false);
-  if (await probe(MODELS_URL)) return MODELS_URL;
-  const alt = APP_BASE + '/models';
-  if (MODELS_URL !== alt && (await probe(alt))) return alt;
-  return MODELS_URL;
+  const probe = (url) => fetch(url + '/face_recognition_model-weights_manifest.json', { cache: 'no-store' }).then(r => r.ok).catch(() => false);
+  // Try relative models folder first
+  const rel = MODELS_URL_PRIMARY;
+  if (await probe(rel)) return rel;
+  // Then absolute to app base
+  const abs = ORIGIN + APP_BASE + '/models';
+  if (await probe(abs)) return abs;
+  return rel; // fallback (error will show later if truly missing)
 }
-async function loadModels(){ const base = await resolveModelsUrl(); await faceapi.nets.tinyFaceDetector.loadFromUri(base); await faceapi.nets.faceLandmark68Net.loadFromUri(base); await faceapi.nets.faceRecognitionNet.loadFromUri(base); }
-async function startCam(){ const video = document.getElementById('video'); stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false }); video.srcObject = stream; }
-async function fetchRoster(){ const res = await fetch('../api/list_faces_all.php',{method:'POST'}); roster = await res.json(); if (!Array.isArray(roster)) roster = []; }
+async function loadModels(){
+  const base = await resolveModelsUrl();
+  await faceapi.nets.tinyFaceDetector.loadFromUri(base);
+  await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+  await faceapi.nets.faceRecognitionNet.loadFromUri(base);
+}
+async function startCam(){
+  const video = document.getElementById('video');
+  stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+  video.srcObject = stream;
+}
+async function fetchRoster(){
+  const res = await fetch(ORIGIN + APP_BASE + '/api/list_faces_all.php', { method:'POST' });
+  roster = await res.json();
+  if (!Array.isArray(roster)) roster = [];
+}
 
 function drawBox(det, label){
-  const canvas = document.getElementById('overlay'); const ctx = canvas.getContext('2d');
+  const canvas = document.getElementById('overlay');
+  const ctx = canvas.getContext('2d');
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if (!det) return;
   const { box } = det.detection;
-  ctx.strokeStyle='lime'; ctx.lineWidth=2; ctx.strokeRect(box.x,box.y,box.width,box.height);
+  ctx.strokeStyle = 'lime'; ctx.lineWidth = 2; ctx.strokeRect(box.x, box.y, box.width, box.height);
   ctx.fillStyle='rgba(0,0,0,.6)'; const tag = String(label||'');
   const tw = Math.min(160, ctx.measureText(tag).width + 10);
   ctx.fillRect(box.x, Math.max(0, box.y-18), tw, 18);
@@ -134,28 +147,35 @@ function drawBox(det, label){
 
 async function detectOneWithProfiles(img){
   for (const prof of DET_PROFILES){
-    const det = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions(prof)).withFaceLandmarks().withFaceDescriptor();
+    const det = await faceapi
+      .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions(prof))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
     if (det && det.descriptor) return det;
   }
   return null;
 }
 
 async function buildMatcher(){
-  const labeled=[]; let done=0, total=roster.length;
+  const labeled = [];
+  let done = 0, total = roster.length;
   for (const row of roster){
     const url = row.face_image_url || normalizePath(row.face_image_path);
     if (!url) { setStatus(`Preparing faces… ${done}/${total}`); continue; }
-    try {
-      const blob = await fetch(url, { cache:'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP '+r.status); return r.blob(); });
-      const img  = await new Promise(res => { const i=new Image(); i.onload=()=>res(i); i.src=URL.createObjectURL(blob); });
+    try{
+      const blob = await fetch(url, { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); });
+      const img  = await new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = URL.createObjectURL(blob); });
       const det  = await detectOneWithProfiles(img);
       if (det){
         const label = String(row.student_id);
         labeled.push(new faceapi.LabeledFaceDescriptors(label, [det.descriptor]));
         indexByLabel.set(label, { id: row.student_id, name: row.fullname });
       }
-    } catch(e){ console.warn('Roster image issue:', e); }
-    finally { done++; setStatus(`Preparing faces… ${done}/${total}`); }
+    }catch(err){
+      console.warn('Reference image error:', err);
+    }finally{
+      done++; setStatus(`Preparing faces… ${done}/${total}`);
+    }
   }
   if (!labeled.length) throw new Error('No reference faces loaded.');
   matcher = new faceapi.FaceMatcher(labeled, DISTANCE_THRESHOLD);
@@ -163,12 +183,18 @@ async function buildMatcher(){
 
 async function scanLoop(){
   if (!ready || !matcher) return;
+
   const video = document.getElementById('video');
-  const det = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 })).withFaceLandmarks().withFaceDescriptor();
+  const det = await faceapi
+    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 }))
+    .withFaceLandmarks()
+    .withFaceDescriptor();
+
   if (!det){ setStatus('🔍 Scanning for a face…'); drawBox(null,''); return; }
+
   const best = matcher.findBestMatch(det.descriptor);
   if (best && best.label !== 'unknown'){
-    const meta = indexByLabel.get(best.label) || { name:'Student', id: best.label };
+    const meta = indexByLabel.get(best.label) || { name: 'Student', id: best.label };
     const confPct = Math.max(0, Math.min(99, Math.round((1 - best.distance) * 100)));
     drawBox(det, `${meta.name} ${confPct}%`);
     setStatus(`✅ Recognized: ${meta.name} (${confPct}%) — logging in…`);
@@ -176,18 +202,21 @@ async function scanLoop(){
 
     try{
       const body = new URLSearchParams({ student_id: String(meta.id) });
-      const res  = await fetch('../config/login_by_student.php', {
+      const res  = await fetch(LOGIN_URL, {
         method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
       }).then(r=>r.json());
 
       if (res && res.success){
-        // Always go through selector (sets class context + attendance)
-        window.location.href = APP_BASE + '/user/teacher/select_subject.php';
+        // Use an ABSOLUTE URL so the browser never treats "user" as a hostname.
+        window.location.replace(SELECT_URL);
       } else {
-        setStatus('⚠️ Login failed on server. Retrying…'); scanTimer = setInterval(scanLoop, PING_MS);
+        setStatus('⚠️ Login failed on server. Retrying…');
+        scanTimer = setInterval(scanLoop, PING_MS);
       }
     } catch(e) {
-      console.error(e); setStatus('❌ Network/login error.'); scanTimer = setInterval(scanLoop, PING_MS);
+      console.error(e);
+      setStatus('❌ Network/login error.');
+      scanTimer = setInterval(scanLoop, PING_MS);
     }
   } else {
     drawBox(det, 'Unknown'); setStatus('❌ Face not recognized.');
