@@ -1,7 +1,10 @@
 <?php
 // api/get_behavior_status.php
 session_start();
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 
 if (!isset($_SESSION['teacher_id'])) {
   http_response_code(403);
@@ -9,7 +12,7 @@ if (!isset($_SESSION['teacher_id'])) {
   exit;
 }
 
-    include __DIR__ . '/../config/db.php';
+include __DIR__ . '/../config/db.php';
 if ($conn->connect_error) {
   http_response_code(500);
   echo json_encode(['ok'=>false,'message'=>'DB error']);
