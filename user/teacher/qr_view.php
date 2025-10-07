@@ -6,7 +6,6 @@ include "../../config/db.php";
 if (!isset($_SESSION['teacher_id'])) { header("Location: ../teacher_login.php"); exit; }
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-
 $conn->set_charset("utf8mb4");
 
 $session_id = (int)($_GET['session_id'] ?? 0);
@@ -17,16 +16,33 @@ $row   = $res->fetch_assoc();
 $code  = $row['session_code'] ?: (string)$row['session_id']; // fallback to numeric id
 $title = $row['title'] ?: 'Quick Quiz';
 
-/* ---- Build join link (use LAN IP if accessed via localhost) ---- */
-$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-$host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-if ($host === 'localhost' || $host === '127.0.0.1') {
-    $host = '192.168.254.123'; // your LAN IP for mobile testing
+/* ---- Build join link (env-aware; NO /CMS on production) ---- */
+$scheme = (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']))
+  ? $_SERVER['HTTP_X_FORWARDED_PROTO']
+  : ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http');
+
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+
+/* Optional LAN override (when opening this page from localhost on your PC) */
+if ($host === 'localhost' || $host === '127.0.0.1' || $host === '::1') {
+  // Set this to your real LAN IP so phones on Wi-Fi can open the link
+  $host = '192.168.254.123';
 }
-/* If your Apache docroot serves CMS at the root (no /CMS in the URL),
-   change the line below to: $base = $scheme.'://'.$host.'/user/'; */
-$base     = $scheme . '://' . $host . '/CMS/user/';
-$joinLink = $base . 'join_quiz.php?code=' . urlencode($code);
+
+/* Decide if path should include /CMS (only on localhost/LAN/private IPs) */
+$useCmsPrefix = false;
+if (in_array($host, ['localhost','127.0.0.1','::1'], true)) {
+  $useCmsPrefix = true;
+} elseif (filter_var($host, FILTER_VALIDATE_IP)) {
+  // 10.0.0.0/8, 172.16.0.0–172.31.255.255, 192.168.0.0/16 are private
+  $useCmsPrefix = preg_match('/^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/', $host) === 1;
+}
+
+$prefix   = $useCmsPrefix ? '/CMS' : '';            // '' on production (e.g., myschoolness.site)
+$joinLink = $scheme . '://' . $host . $prefix . '/user/join_quiz.php?code=' . urlencode($code);
+
+// QR fallback PNG endpoint (same env logic)
+$qrPngBase = $scheme . '://' . $host . $prefix . '/config/generate_qr.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -68,7 +84,10 @@ $joinLink = $base . 'join_quiz.php?code=' . urlencode($code);
 
   <script>
     (function () {
-      const url     = <?= json_encode($joinLink) ?>;
+      const url       = <?= json_encode($joinLink) ?>;
+      const qrPngBase = <?= json_encode($qrPngBase) ?>;
+      const code      = <?= json_encode($code) ?>;
+
       const qrBox   = document.getElementById('qrBox');
       const qrImg   = document.getElementById('qrImg');
       const copyBtn = document.getElementById('btnCopy');
@@ -77,7 +96,7 @@ $joinLink = $base . 'join_quiz.php?code=' . urlencode($code);
         new QRCode(qrBox, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
       } catch (e) {
         // Fallback to server PNG if JS drawing fails
-        qrImg.src = "/CMS/config/generate_qr.php?code=" + encodeURIComponent(<?= json_encode($code) ?>);
+        qrImg.src = qrPngBase + "?code=" + encodeURIComponent(code);
         qrImg.classList.remove('hidden');
         qrBox.classList.add('hidden');
       }
