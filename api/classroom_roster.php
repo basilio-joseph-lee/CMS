@@ -89,53 +89,71 @@ if (!$ctx['advisory_id']) {
   } catch (Throwable $e) {}
 }
 
-if (!$ctx['advisory_id']) {
-  http_response_code(404);
-  echo json_encode(['error'=>'Class context not found for this student']); exit;
+if (!$ctx['advisory_id'] && !$ctx['class_name']) {
+  // Final fallback: use student's own section directly
+  try {
+    $qS = $conn->prepare("SELECT section FROM students WHERE student_id = ? LIMIT 1");
+    $qS->bind_param('i', $student_id);
+    $qS->execute();
+    $rS = $qS->get_result();
+    if ($rowS = $rS->fetch_assoc()) {
+      $ctx['class_name'] = $rowS['section'] ?? null;
+    }
+  } catch (Throwable $e) {}
+  if (!$ctx['class_name']) {
+    http_response_code(404);
+    echo json_encode(['error'=>'Class context not found for this student']); exit;
+  }
 }
 
 // ------------ 3) Classmates list ------------
 $students = [];
-try {
-  if ($ctx['school_year_id']) {
-    $st = $conn->prepare("
-      SELECT s.student_id AS id, s.fullname AS name
-      FROM student_enrollments se
-      INNER JOIN students s ON s.student_id = se.student_id
-      WHERE se.advisory_id = ? AND se.school_year_id = ?
-      GROUP BY s.student_id, s.fullname
-      ORDER BY s.fullname ASC
-    ");
-    $st->bind_param('ii', $ctx['advisory_id'], $ctx['school_year_id']);
-  } else {
-    $st = $conn->prepare("
-      SELECT s.student_id AS id, s.fullname AS name
-      FROM student_enrollments se
-      INNER JOIN students s ON s.student_id = se.student_id
-      WHERE se.advisory_id = ?
-      GROUP BY s.student_id, s.fullname
-      ORDER BY s.fullname ASC
-    ");
-    $st->bind_param('i', $ctx['advisory_id']);
-  }
-  $st->execute();
-  $rs = $st->get_result();
-  while ($row = $rs->fetch_assoc()) {
-    $students[] = ['id'=>(int)$row['id'], 'name'=>$row['name']];
-  }
-} catch (Throwable $e) {
-  // Final fallback: section/class_name (if no enrollments)
-  if ($ctx['class_name']) {
-    $safe = $conn->real_escape_string($ctx['class_name']);
-    $rs = $conn->query("
-      SELECT s.student_id AS id, s.fullname AS name
-      FROM students s
-      WHERE s.section = '{$safe}'
-      ORDER BY s.fullname ASC
-    ");
+
+// Path A: advisory-based roster (preferred if we have advisory_id)
+if ($ctx['advisory_id']) {
+  try {
+    if ($ctx['school_year_id']) {
+      $st = $conn->prepare("
+        SELECT s.student_id AS id, s.fullname AS name
+        FROM student_enrollments se
+        INNER JOIN students s ON s.student_id = se.student_id
+        WHERE se.advisory_id = ? AND se.school_year_id = ?
+        GROUP BY s.student_id, s.fullname
+        ORDER BY s.fullname ASC
+      ");
+      $st->bind_param('ii', $ctx['advisory_id'], $ctx['school_year_id']);
+    } else {
+      $st = $conn->prepare("
+        SELECT s.student_id AS id, s.fullname AS name
+        FROM student_enrollments se
+        INNER JOIN students s ON s.student_id = se.student_id
+        WHERE se.advisory_id = ?
+        GROUP BY s.student_id, s.fullname
+        ORDER BY s.fullname ASC
+      ");
+      $st->bind_param('i', $ctx['advisory_id']);
+    }
+    $st->execute();
+    $rs = $st->get_result();
     while ($row = $rs->fetch_assoc()) {
       $students[] = ['id'=>(int)$row['id'], 'name'=>$row['name']];
     }
+  } catch (Throwable $e) {
+    // fall through to section-based below
+  }
+}
+
+// Path B: section-based roster (works even when no advisory/enrollments)
+if (empty($students) && $ctx['class_name']) {
+  $safe = $conn->real_escape_string($ctx['class_name']);
+  $rs = $conn->query("
+    SELECT s.student_id AS id, s.fullname AS name
+    FROM students s
+    WHERE s.section = '{$safe}'
+    ORDER BY s.fullname ASC
+  ");
+  while ($row = $rs->fetch_assoc()) {
+    $students[] = ['id'=>(int)$row['id'], 'name'=>$row['name']];
   }
 }
 
