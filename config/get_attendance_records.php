@@ -1,7 +1,7 @@
 <?php
-// /api/parent/get_attendance_by_range.php
-// Returns one row per calendar day with a single status for that day.
-// Shape: { status: "success", days: [ {date:"YYYY-MM-DD", status:"Present|Absent|Late"} ] }
+// /api/parent/get_attendance_records.php
+// Returns raw rows with timestamp, suitable for detailed lists.
+// Shape: { status: "success", records: [ {attendance_id, date, timestamp, status, subject_id, advisory_id, school_year_id} ] }
 
 header('Content-Type: application/json; charset=utf-8');
 error_reporting(E_ERROR | E_PARSE);
@@ -11,13 +11,13 @@ try {
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
     $conn->set_charset('utf8mb4');
 
-    // GET/POST params
     $student_id     = isset($_GET['student_id']) ? (int)$_GET['student_id'] : (int)($_POST['student_id'] ?? 0);
     $from           = $_GET['from']  ?? $_POST['from']  ?? null;
     $to             = $_GET['to']    ?? $_POST['to']    ?? null;
     $school_year_id = isset($_GET['school_year_id']) ? (int)$_GET['school_year_id'] : (int)($_POST['school_year_id'] ?? 0);
     $subject_id     = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : (int)($_POST['subject_id'] ?? 0);
     $advisory_id    = isset($_GET['advisory_id']) ? (int)$_GET['advisory_id'] : (int)($_POST['advisory_id'] ?? 0);
+    $limit          = isset($_GET['limit']) ? (int)$_GET['limit'] : (int)($_POST['limit'] ?? 0);
 
     if ($student_id <= 0) {
         echo json_encode(['status'=>'error','message'=>'Missing student_id']); exit;
@@ -31,7 +31,6 @@ try {
         $to   = $toDT->format('Y-m-d')   . ' 23:59:59';
     }
 
-    // Build WHERE dynamically
     $where = " WHERE ar.student_id = ? AND ar.timestamp BETWEEN ? AND ? ";
     $types = "iss";
     $params = [$student_id, $from, $to];
@@ -40,45 +39,47 @@ try {
     if ($subject_id > 0)     { $where .= " AND ar.subject_id     = ? "; $types .= "i"; $params[] = $subject_id; }
     if ($advisory_id > 0)    { $where .= " AND ar.advisory_id    = ? "; $types .= "i"; $params[] = $advisory_id; }
 
-    // Collapse multiple entries per day using a precedence: Absent > Late > Present
-    // score: Present=1, Late=2, Absent=3; choose MAX(score), then map back to label.
     $sql = "
         SELECT
-            DATE(ar.timestamp) AS date,
-            MAX(
-                CASE LOWER(ar.status)
-                    WHEN 'present' THEN 1
-                    WHEN 'late'    THEN 2
-                    WHEN 'absent'  THEN 3
-                    ELSE 0
-                END
-            ) AS score
+            ar.attendance_id,
+            ar.student_id,
+            ar.subject_id,
+            ar.advisory_id,
+            ar.school_year_id,
+            ar.status,
+            ar.timestamp,
+            DATE(ar.timestamp) AS date
         FROM attendance_records ar
         $where
-        GROUP BY DATE(ar.timestamp)
-        ORDER BY DATE(ar.timestamp) ASC
+        ORDER BY ar.timestamp DESC
     ";
+
+    if ($limit > 0) {
+        $sql .= " LIMIT ? ";
+        $types .= "i";
+        $params[] = $limit;
+    }
 
     $stmt = $conn->prepare($sql);
     $stmt->bind_param($types, ...$params);
     $stmt->execute();
     $res = $stmt->get_result();
 
-    $days = [];
-    while ($row = $res->fetch_assoc()) {
-        $status = 'No Record';
-        $score = (int)$row['score'];
-        if ($score === 1) $status = 'Present';
-        elseif ($score === 2) $status = 'Late';
-        elseif ($score === 3) $status = 'Absent';
-
-        $days[] = [
-            'date'   => $row['date'],
-            'status' => $status,
+    $rows = [];
+    while ($r = $res->fetch_assoc()) {
+        $rows[] = [
+            'attendance_id'  => (int)$r['attendance_id'],
+            'student_id'     => (int)$r['student_id'],
+            'subject_id'     => (int)$r['subject_id'],
+            'advisory_id'    => (int)$r['advisory_id'],
+            'school_year_id' => (int)$r['school_year_id'],
+            'status'         => (string)$r['status'],
+            'timestamp'      => (string)$r['timestamp'],
+            'date'           => (string)$r['date'],
         ];
     }
 
-    echo json_encode(['status'=>'success','days'=>$days], JSON_UNESCAPED_UNICODE);
+    echo json_encode(['status'=>'success','records'=>$rows], JSON_UNESCAPED_UNICODE);
 
 } catch (Throwable $e) {
     echo json_encode(['status'=>'error','message'=>$e->getMessage()]);
