@@ -1,7 +1,7 @@
 <?php
 // /CMS/config/close_quiz.php
 
-include("conn.php");
+include("db.php");
 session_start();
 
 $ajax = isset($_POST['ajax']) || isset($_GET['ajax']);
@@ -18,33 +18,33 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 try {
 
-  $conn->set_charset('utf8mb4');
+  $db->set_charset('utf8mb4');
 
   if ($session_id > 0) {
-    $conn->begin_transaction();
+    $db->begin_transaction();
 
     // 1) Mark session Ended
-    $q = $conn->prepare("UPDATE kiosk_quiz_sessions SET status='ended', ended_at=NOW() WHERE session_id=?");
+    $q = $db->prepare("UPDATE kiosk_quiz_sessions SET status='ended', ended_at=NOW() WHERE session_id=?");
     $q->bind_param('i', $session_id);
     $q->execute();
 
     // 2) Clear any active flags (use NULL — avoids unique collisions on (subject/advisory/sy/active_flag))
-    $q = $conn->prepare("UPDATE kiosk_quiz_questions SET active_flag=NULL WHERE session_id=?");
+    $q = $db->prepare("UPDATE kiosk_quiz_questions SET active_flag=NULL WHERE session_id=?");
     $q->bind_param('i', $session_id);
     $q->execute();
 
     // 3) Remove the active pointer for this session
-    $q = $conn->prepare("DELETE FROM kiosk_quiz_active WHERE session_id=?");
+    $q = $db->prepare("DELETE FROM kiosk_quiz_active WHERE session_id=?");
     $q->bind_param('i', $session_id);
     $q->execute();
 
-    $conn->commit();
+    $db->commit();
   }
 
   if ($ajax) echo json_encode(['success'=>true,'session_id'=>$session_id,'status'=>'ended']);
   else       header("Location: ../user/teacher/quiz_dashboard.php");
 } catch (Throwable $e) {
-  if (isset($conn)) { try { $conn->rollback(); } catch (\Throwable $ignored) {} }
+  if (isset($db)) { try { $db->rollback(); } catch (\Throwable $ignored) {} }
   if ($ajax) echo json_encode(['success'=>false,'message'=>$e->getMessage()]);
   else       header("Location: ../user/teacher/quiz_dashboard.php");
 }
