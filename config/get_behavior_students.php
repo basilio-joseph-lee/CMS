@@ -74,11 +74,7 @@ if (!empty($dateStr)) {
 // Else if a "since" ISO is provided, use it as a lower UTC bound.
 } elseif (!empty($sinceIso)) {
   // Normalize to UTC
-  try {
-    $since = new DateTime($sinceIso);
-  } catch (Throwable $e) {
-    $since = false;
-  }
+  try { $since = new DateTime($sinceIso); } catch (Throwable $e) { $since = false; }
   if ($since instanceof DateTime) {
     $since->setTimezone($UTC_TZ);
     $whereParts[] = '`timestamp` >= ?';
@@ -111,6 +107,7 @@ if (!empty($dateStr)) {
 
 $whereSql = 'WHERE ' . implode(' AND ', $whereParts);
 
+// NOTE: we still only need action_type + timestamp from DB
 $sql = "SELECT `action_type`, `timestamp`
           FROM `behavior_logs`
           $whereSql
@@ -119,6 +116,56 @@ $sql = "SELECT `action_type`, `timestamp`
 
 $types .= 'i';
 $params[] = $limit;
+
+// ---------- Normalization helpers ----------
+function norm_type($raw) {
+  $t = strtolower(trim((string)$raw));
+  // collapse non-alphanumerics to underscores
+  $t = preg_replace('/[^a-z0-9]+/i', '_', $t);
+  $t = trim($t, '_');
+
+  // aliases → canonical keys
+  $aliases = [
+    // snacks
+    'snack_requested' => 'snack',
+    // health
+    'notwell' => 'not_well',
+    // restroom
+    'restroom_request' => 'restroom', 'toilet' => 'restroom', 'bathroom' => 'restroom',
+    // attendance
+    'marked_attendance' => 'attendance', 'check_in' => 'attendance',
+    // i’m back variants
+    'im_back' => 'im_back', 'i_m_back' => 'im_back', 'imback' => 'im_back',
+    'i_am_back' => 'im_back', 'back_to_class' => 'im_back', 'returned' => 'im_back',
+    'came_back' => 'im_back', 'back' => 'im_back', 'log_back' => 'im_back',
+  ];
+  if (isset($aliases[$t])) return $aliases[$t];
+  return $t;
+}
+
+function pretty_label($norm) {
+  switch ($norm) {
+    case 'attendance':      return 'Marked Attendance';
+    case 'snack':           return 'Snack Requested';
+    case 'restroom':        return 'Restroom Request';
+    case 'daily_note':      return 'Daily Note';
+    case 'participated':    return 'Participated';
+    case 'water_break':     return 'Water Break';
+    case 'borrow_book':     return 'Borrowed Book';
+    case 'return_material': return 'Returned Material';
+    case 'lunch_break':     return 'Lunch Break';
+    case 'not_well':        return 'Not Well';
+    case 'help_request':    return 'Help Requested';
+    case 'ready_dismissal': return 'Ready for Dismissal';
+    case 'im_back':         return "I'm Back";
+    default:
+      // prettify unknown tokens
+      $s = str_replace('_', ' ', $norm);
+      $s = trim($s);
+      if ($s === '' || $s === 'log') return 'Log';
+      return strtoupper(substr($s, 0, 1)) . substr($s, 1);
+  }
+}
 
 // ---------- Query ----------
 try {
@@ -139,14 +186,19 @@ try {
   $seen = [];
 
   while ($row = $res->fetch_assoc()) {
-    // De-dup on (action_type|timestamp) just like your previous version
-    $k = $row['action_type'] . '|' . $row['timestamp'];
+    $rawType = $row['action_type'];
+    $norm    = norm_type($rawType);
+    $label   = pretty_label($norm);
+
+    // De-dup on (raw|timestamp) like your previous version
+    $k = $rawType . '|' . $row['timestamp'];
     if (isset($seen[$k])) continue;
     $seen[$k] = true;
 
     $out[] = [
-      'action_type' => $row['action_type'],
-      'timestamp'   => $row['timestamp'], // keep UTC; app converts to local
+      'action_type' => $norm,            // normalized key used by app styling
+      'label'       => $label,           // human label (UI can prefer this)
+      'timestamp'   => $row['timestamp'] // keep UTC; app converts to local
     ];
   }
 
