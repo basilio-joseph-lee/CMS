@@ -3,32 +3,34 @@ session_start();
 include '../../config/teacher_guard.php';
 include '../../config/db.php';
 
-
-$teacher_id = $_SESSION['teacher_id'];
-$subject_id = $_SESSION['subject_id'];
-$advisory_id = $_SESSION['advisory_id'];
+$teacher_id     = $_SESSION['teacher_id'];
+$subject_id     = $_SESSION['subject_id'];
+$advisory_id    = $_SESSION['advisory_id'];
 $school_year_id = $_SESSION['school_year_id'];
 
 $subject_name = $_SESSION['subject_name'];
-$class_name = $_SESSION['class_name'];
-$year_label = $_SESSION['year_label'];
-$teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
-
+$class_name   = $_SESSION['class_name'];
+$year_label   = $_SESSION['year_label'];
+$teacherName  = $_SESSION['teacher_fullname'] ?? 'Teacher';
 
 if ($conn->connect_error) {
   die("Connection failed: " . $conn->connect_error);
 }
 
+$conn->set_charset('utf8mb4');
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+
 // --- Create ---
 if (isset($_POST['add'])) {
-  $title = $_POST['title'];
-  $message = $_POST['message'];
-  $subject_id = $_POST['subject_id'];
-  $class_id = $_POST['class_id'];
+  $title         = $_POST['title'];
+  $message       = $_POST['message'];
+  $subject_id    = (int)$_POST['subject_id'];
+  $class_id      = (int)$_POST['class_id'];
+  $audience      = $_POST['audience'] ?? 'STUDENT';
   $visible_until = $_POST['visible_until'] ?: NULL;
 
-  $stmt = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until) VALUES (?, ?, ?, ?, ?, ?)");
-  $stmt->bind_param("iiisss", $teacher_id, $subject_id, $class_id, $title, $message, $visible_until);
+  $stmt = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, audience, visible_until) VALUES (?, ?, ?, ?, ?, ?, ?)");
+  $stmt->bind_param("iiissss", $teacher_id, $subject_id, $class_id, $title, $message, $audience, $visible_until);
   $stmt->execute();
   $stmt->close();
   header("Location: announcement.php?success=added");
@@ -37,7 +39,7 @@ if (isset($_POST['add'])) {
 
 // --- Delete ---
 if (isset($_GET['delete'])) {
-  $id = $_GET['delete'];
+  $id = (int)$_GET['delete'];
   $conn->query("DELETE FROM announcements WHERE id = $id");
   header("Location: announcement.php?success=deleted");
   exit;
@@ -46,36 +48,43 @@ if (isset($_GET['delete'])) {
 // --- Edit Fetch ---
 $edit_data = null;
 if (isset($_GET['edit'])) {
-  $id = $_GET['edit'];
+  $id = (int)$_GET['edit'];
   $result = $conn->query("SELECT * FROM announcements WHERE id = $id");
   $edit_data = $result->fetch_assoc();
 }
 
 // --- Update ---
 if (isset($_POST['update'])) {
-  $id = $_POST['id'];
-  $title = $_POST['title'];
-  $message = $_POST['message'];
-  $subject_id = $_POST['subject_id'];
-  $class_id = $_POST['class_id'];
+  $id            = (int)$_POST['id'];
+  $title         = $_POST['title'];
+  $message       = $_POST['message'];
+  $subject_id    = (int)$_POST['subject_id'];
+  $class_id      = (int)$_POST['class_id'];
+  $audience      = $_POST['audience'] ?? 'STUDENT';
   $visible_until = $_POST['visible_until'] ?: NULL;
 
-  $stmt = $conn->prepare("UPDATE announcements SET title=?, message=?, subject_id=?, class_id=?, visible_until=? WHERE id=?");
-  $stmt->bind_param("ssissi", $title, $message, $subject_id, $class_id, $visible_until, $id);
+  $stmt = $conn->prepare("UPDATE announcements SET title=?, message=?, subject_id=?, class_id=?, audience=?, visible_until=? WHERE id=?");
+  $stmt->bind_param("ssisssi", $title, $message, $subject_id, $class_id, $audience, $visible_until, $id);
   $stmt->execute();
   $stmt->close();
   header("Location: announcement.php?success=updated");
   exit;
 }
 
+// Dropdown sources (limit to the teacher’s)
 $subjects = $conn->query("SELECT subject_id, subject_name FROM subjects WHERE teacher_id = $teacher_id");
-$classes = $conn->query("SELECT advisory_id, class_name FROM advisory_classes WHERE teacher_id = $teacher_id");
-$res = $conn->query("SELECT a.*, s.subject_name, c.class_name FROM announcements a 
-                     LEFT JOIN subjects s ON a.subject_id = s.subject_id 
-                     LEFT JOIN advisory_classes c ON a.class_id = c.advisory_id
-                     WHERE a.teacher_id = $teacher_id ORDER BY a.date_posted DESC");
-?>
+$classes  = $conn->query("SELECT advisory_id, class_name FROM advisory_classes WHERE teacher_id = $teacher_id");
 
+// List with joined names + audience
+$res = $conn->query("
+  SELECT a.*, s.subject_name, c.class_name
+  FROM announcements a
+  LEFT JOIN subjects s ON a.subject_id = s.subject_id
+  LEFT JOIN advisory_classes c ON a.class_id = c.advisory_id
+  WHERE a.teacher_id = $teacher_id
+  ORDER BY a.date_posted DESC
+");
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -104,10 +113,10 @@ $res = $conn->query("SELECT a.*, s.subject_name, c.class_name FROM announcements
   <div class="flex justify-between items-center mb-6">
     <div>
       <h1 class="text-4xl font-bold text-[#bc6c25]">📣 Post Announcements</h1>
-      <p class="text-lg font-semibold text-gray-800 mt-2">Subject: 
-        <span class="text-green-700"><?= $subject_name ?></span> — 
-        <span class="text-blue-700"><?= $class_name ?></span> | SY: 
-        <span class="text-red-700"><?= $year_label ?></span></p>
+      <p class="text-lg font-semibold text-gray-800 mt-2">Subject:
+        <span class="text-green-700"><?= htmlspecialchars($subject_name) ?></span> —
+        <span class="text-blue-700"><?= htmlspecialchars($class_name) ?></span> | SY:
+        <span class="text-red-700"><?= htmlspecialchars($year_label) ?></span></p>
     </div>
     <div class="space-x-4">
       <button onclick="openAddModal()" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl shadow">+ Add</button>
@@ -124,6 +133,7 @@ $res = $conn->query("SELECT a.*, s.subject_name, c.class_name FROM announcements
           <th class="p-3 text-lg">Message</th>
           <th class="p-3 text-lg">Subject</th>
           <th class="p-3 text-lg">Section</th>
+          <th class="p-3 text-lg">Audience</th>
           <th class="p-3 text-lg">Date</th>
           <th class="p-3 text-lg">Visible Until</th>
           <th class="p-3 text-center text-lg">Actions</th>
@@ -134,17 +144,18 @@ $res = $conn->query("SELECT a.*, s.subject_name, c.class_name FROM announcements
         <tr class="border-b hover:bg-yellow-50">
           <td class="p-3 font-semibold"><?= htmlspecialchars($row['title']) ?></td>
           <td class="p-3"><?= htmlspecialchars($row['message']) ?></td>
-          <td class="p-3"><?= $row['subject_name'] ?? 'N/A' ?></td>
-          <td class="p-3"><?= $row['class_name'] ?? 'N/A' ?></td>
+          <td class="p-3"><?= htmlspecialchars($row['subject_name'] ?? 'N/A') ?></td>
+          <td class="p-3"><?= htmlspecialchars($row['class_name'] ?? 'N/A') ?></td>
+          <td class="p-3"><?= htmlspecialchars($row['audience'] ?? 'STUDENT') ?></td>
           <td class="p-3"><?= date('M d, Y h:i A', strtotime($row['date_posted'])) ?></td>
           <td class="p-3"><?= $row['visible_until'] ? date('M d, Y', strtotime($row['visible_until'])) : '—' ?></td>
           <td class="p-3 text-center">
-            <button onclick='openEditModal(<?= json_encode($row) ?>)' class="text-yellow-600 hover:underline">Edit</button> |
-            <button onclick="confirmDelete(<?= $row['id'] ?>)" class="text-red-600 hover:underline">Delete</button>
+            <button onclick='openEditModal(<?= json_encode($row, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP) ?>)' class="text-yellow-600 hover:underline">Edit</button> |
+            <button onclick="confirmDelete(<?= (int)$row['id'] ?>)" class="text-red-600 hover:underline">Delete</button>
           </td>
         </tr>
         <?php endwhile; else: ?>
-        <tr><td colspan="7" class="text-center text-gray-500 py-6">No announcements found.</td></tr>
+        <tr><td colspan="8" class="text-center text-gray-500 py-6">No announcements found.</td></tr>
         <?php endif; ?>
       </tbody>
     </table>
@@ -170,7 +181,7 @@ $res = $conn->query("SELECT a.*, s.subject_name, c.class_name FROM announcements
         <select name="subject_id" id="subject_id" required class="w-full border-2 border-yellow-300 rounded px-3 py-2">
           <?php
           $subjects2 = $conn->query("SELECT subject_id, subject_name FROM subjects WHERE teacher_id = $teacher_id");
-          while ($s = $subjects2->fetch_assoc()) echo "<option value='{$s['subject_id']}'>{$s['subject_name']}</option>";
+          while ($s = $subjects2->fetch_assoc()) echo "<option value='{$s['subject_id']}'>".htmlspecialchars($s['subject_name'])."</option>";
           ?>
         </select>
       </div>
@@ -179,11 +190,21 @@ $res = $conn->query("SELECT a.*, s.subject_name, c.class_name FROM announcements
         <select name="class_id" id="class_id" required class="w-full border-2 border-yellow-300 rounded px-3 py-2">
           <?php
           $classes2 = $conn->query("SELECT advisory_id, class_name FROM advisory_classes WHERE teacher_id = $teacher_id");
-          while ($c = $classes2->fetch_assoc()) echo "<option value='{$c['advisory_id']}'>{$c['class_name']}</option>";
+          while ($c = $classes2->fetch_assoc()) echo "<option value='{$c['advisory_id']}'>".htmlspecialchars($c['class_name'])."</option>";
           ?>
         </select>
       </div>
     </div>
+
+    <div>
+      <label class="block font-semibold">Audience</label>
+      <select name="audience" id="audience" class="w-full border-2 border-yellow-300 rounded px-3 py-2">
+        <option value="STUDENT">Students</option>
+        <option value="PARENT">Parents</option>
+        <option value="BOTH">Both (Students & Parents)</option>
+      </select>
+    </div>
+
     <div>
       <label class="block font-semibold">Visible Until</label>
       <input type="date" name="visible_until" id="visible_until" class="w-full border-2 border-yellow-300 rounded px-3 py-2">
@@ -202,6 +223,9 @@ function openAddModal() {
   document.getElementById('announcementId').value = '';
   document.getElementById('title').value = '';
   document.getElementById('message').value = '';
+  document.getElementById('subject_id').selectedIndex = 0;
+  document.getElementById('class_id').selectedIndex = 0;
+  document.getElementById('audience').value = 'STUDENT';
   document.getElementById('visible_until').value = '';
   document.getElementById('modal').classList.remove('hidden');
 }
@@ -214,7 +238,8 @@ function openEditModal(data) {
   document.getElementById('message').value = data.message;
   document.getElementById('subject_id').value = data.subject_id;
   document.getElementById('class_id').value = data.class_id;
-  document.getElementById('visible_until').value = data.visible_until;
+  document.getElementById('audience').value = (data.audience || 'STUDENT');
+  document.getElementById('visible_until').value = (data.visible_until || '');
   document.getElementById('modal').classList.remove('hidden');
 }
 
