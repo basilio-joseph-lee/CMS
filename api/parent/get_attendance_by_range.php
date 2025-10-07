@@ -1,7 +1,7 @@
 <?php
 // /api/parent/get_attendance_by_range.php
 // Returns one row per calendar day with a single status for that day.
-// Shape: { status: "success", days: [ {date:"YYYY-MM-DD", status:"Present|Absent|Late"} ] }
+// Shape: { status: "success", days: [ {date:"YYYY-MM-DD", status:"Present|Absent|Late|No Record"} ] }
 
 header('Content-Type: application/json; charset=utf-8');
 error_reporting(E_ERROR | E_PARSE);
@@ -10,6 +10,22 @@ try {
     include __DIR__ . '/../../config/db.php';
     mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
     $conn->set_charset('utf8mb4');
+
+    // --- helpers ---
+    function norm_dt(?string $s): ?string {
+        if (!$s) return null;
+        $s = trim($s);
+        // Replace 'T' with space
+        $s = preg_replace('/[Tt]/', ' ', $s);
+        // Drop milliseconds + timezone suffix like ".123Z" or "+08:00"
+        $s = preg_replace('/(\.\d+)?(Z|[+\-]\d{2}:\d{2})$/', '', $s);
+        // Keep first 19 chars (YYYY-MM-DD HH:MM:SS)
+        if (strlen($s) >= 19) $s = substr($s, 0, 19);
+        // Fallback parseable by strtotime
+        $ts = strtotime($s);
+        if ($ts === false) return null;
+        return date('Y-m-d H:i:s', $ts);
+    }
 
     // GET/POST params
     $student_id     = isset($_GET['student_id']) ? (int)$_GET['student_id'] : (int)($_POST['student_id'] ?? 0);
@@ -23,12 +39,24 @@ try {
         echo json_encode(['status'=>'error','message'=>'Missing student_id']); exit;
     }
 
-    // default range: last 90 days
+    // default range: last 90 days (server local time)
     if (!$from || !$to) {
-        $toDT = new DateTime('now');
+        $toDT   = new DateTime('now');
         $fromDT = (clone $toDT)->modify('-90 days');
-        $from = $fromDT->format('Y-m-d') . ' 00:00:00';
-        $to   = $toDT->format('Y-m-d')   . ' 23:59:59';
+        $from = $fromDT->format('Y-m-d H:i:s');
+        $to   = $toDT->format('Y-m-d H:i:s');
+    }
+
+    $from = norm_dt($from);
+    $to   = norm_dt($to);
+
+    if (!$from || !$to) {
+        echo json_encode(['status'=>'error','message'=>'Invalid date range']); exit;
+    }
+
+    // Swap if caller sent reversed
+    if (strtotime($from) > strtotime($to)) {
+        $tmp = $from; $from = $to; $to = $tmp;
     }
 
     // Build WHERE dynamically
@@ -40,8 +68,7 @@ try {
     if ($subject_id > 0)     { $where .= " AND ar.subject_id     = ? "; $types .= "i"; $params[] = $subject_id; }
     if ($advisory_id > 0)    { $where .= " AND ar.advisory_id    = ? "; $types .= "i"; $params[] = $advisory_id; }
 
-    // Collapse multiple entries per day using a precedence: Absent > Late > Present
-    // score: Present=1, Late=2, Absent=3; choose MAX(score), then map back to label.
+    // Day-level collapse using precedence: Absent > Late > Present
     $sql = "
         SELECT
             DATE(ar.timestamp) AS date,
