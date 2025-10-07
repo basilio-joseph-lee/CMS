@@ -1,15 +1,13 @@
 <?php
-// CMS/user/student/join_quiz.php  (name-based; waits for ONGOING → shows leaderboard after ENDED)
-
-
+// CMS/user/join_quiz.php  (name-based; waits for ONGOING → shows leaderboard after ENDED)
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-$code = strtoupper(trim($_GET['code'] ?? ''));
-
-include __DIR__ . '/../../config/db.php'; // uses $conn from your config
+// Use shared DB config (works on local + production)
+include __DIR__ . '/../config/db.php';
 $conn->set_charset('utf8mb4');
 
+$code = strtoupper(trim($_GET['code'] ?? ''));
 
 // Look up session by code
 $session_id = 0;
@@ -31,6 +29,7 @@ if ($code !== '') {
     $title      = $r['title'] ?: $title;
     $status     = $r['status'];
   }
+  $stmt->close();
 }
 
 if (!$session_id) {
