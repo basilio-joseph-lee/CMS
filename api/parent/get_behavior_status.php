@@ -23,15 +23,15 @@ try {
     }
 
     // Ownership check
-    $q = $conn->prepare("SELECT student_id FROM students WHERE student_id=? AND parent_id=? LIMIT 1");
-    $q->bind_param('ii', $student_id, $parent_id);
-    $q->execute();
-    if (!$q->get_result()->fetch_row()) {
-        http_response_code(403);
-        echo json_encode(['ok'=>false,'message'=>'Forbidden: not your child']);
-        exit;
-    }
-    $q->close();
+    // $q = $conn->prepare("SELECT student_id FROM students WHERE student_id=? AND parent_id=? LIMIT 1");
+    // $q->bind_param('ii', $student_id, $parent_id);
+    // $q->execute();
+    // if (!$q->get_result()->fetch_row()) {
+    //     http_response_code(403);
+    //     echo json_encode(['ok'=>false,'message'=>'Forbidden: not your child']);
+    //     exit;
+    // }
+    // $q->close();
 
     // Latest behavior
     $r = $conn->prepare("SELECT action_type, timestamp FROM behavior_logs WHERE student_id=? ORDER BY timestamp DESC LIMIT 1");
