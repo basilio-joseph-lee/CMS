@@ -10,19 +10,12 @@ require_once __DIR__ . '/../../config/db.php';
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 $conn->set_charset('utf8mb4');
 
-// -------------------------------------------------------------
-// Determine parent_id
-// -------------------------------------------------------------
-$debug = isset($_GET['debug']); // add ?debug=1 to include diagnostics
-
+// Allow quick testing without session: ?parent_id=1  (REMOVE after testing)
+$debug = isset($_GET['debug']);
 $parent_id = isset($_SESSION['parent_id']) ? (int)$_SESSION['parent_id'] : 0;
-
-// ===== TEST OVERRIDE (for manual testing ONLY) =====
-// Allow ?parent_id=1 (or POST) when there is no session.
 if ($parent_id <= 0 && (isset($_GET['parent_id']) || isset($_POST['parent_id']))) {
   $parent_id = (int)($_GET['parent_id'] ?? $_POST['parent_id']);
 }
-// ===== END TEST OVERRIDE =====
 
 if ($parent_id <= 0) {
   echo json_encode(['success' => false, 'message' => 'Unauthorized']);
@@ -30,12 +23,14 @@ if ($parent_id <= 0) {
 }
 
 try {
-  // -------------------------------------------------------------
-  // 0) ACTIVE school year
-  // -------------------------------------------------------------
+  // 0) ACTIVE school year (fallback-friendly fetch)
+  $activeSy = null;
   $syStmt = $conn->prepare("SELECT school_year_id FROM school_years WHERE status='active' LIMIT 1");
   $syStmt->execute();
-  $activeSy = $syStmt->get_result()->fetch_column();
+  $syRes = $syStmt->get_result();
+  if ($row = $syRes->fetch_assoc()) {
+    $activeSy = (int)$row['school_year_id'];
+  }
   $syStmt->close();
 
   if (!$activeSy) {
@@ -45,9 +40,7 @@ try {
     exit;
   }
 
-  // -------------------------------------------------------------
-  // 1) All children (students) of this parent
-  // -------------------------------------------------------------
+  // 1) Children (students) of this parent
   $kids = [];
   $kidStmt = $conn->prepare("SELECT student_id FROM students WHERE parent_id = ?");
   $kidStmt->bind_param('i', $parent_id);
@@ -63,9 +56,7 @@ try {
     exit;
   }
 
-  // -------------------------------------------------------------
-  // 2) Advisory IDs from student_enrollments for ACTIVE SY
-  // -------------------------------------------------------------
+  // 2) Advisory IDs for ACTIVE SY from student_enrollments
   $placeKids = implode(',', array_fill(0, count($kids), '?'));
   $typesKids = str_repeat('i', count($kids));
   $sqlAdvisories = "
@@ -91,14 +82,12 @@ try {
     exit;
   }
 
-  // -------------------------------------------------------------
-  // 3) Announcements for those advisory_ids (PARENT/BOTH), not expired
-  // -------------------------------------------------------------
+  // 3) Announcements for those advisories (PARENT/BOTH), not expired
   $in = implode(',', array_fill(0, count($advisoryIds), '?'));
   $types = str_repeat('i', count($advisoryIds));
   $sql = "
     SELECT a.id, a.title, a.message, a.audience, a.date_posted, a.visible_until,
-           c.class_name, s.subject_name, t.teacher_fullname
+           c.class_name, s.subject_name, t.fullname AS teacher_name
     FROM announcements a
     LEFT JOIN advisory_classes c ON a.class_id = c.advisory_id
     LEFT JOIN subjects s ON a.subject_id = s.subject_id
@@ -124,7 +113,7 @@ try {
       'audience'      => (string)$r['audience'],
       'class_name'    => $r['class_name'],
       'subject_name'  => $r['subject_name'],
-      'teacher_name'  => $r['teacher_fullname'],
+      'teacher_name'  => $r['teacher_name'],
       'date_posted'   => $r['date_posted'],
       'visible_until' => $r['visible_until'],
     ];
