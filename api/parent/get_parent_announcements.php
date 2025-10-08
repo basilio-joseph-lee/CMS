@@ -2,30 +2,37 @@
 // /CMS/api/parent/get_parent_announcements.php  (local)
 // https://myschoolness.site/api/parent/get_parent_announcements.php  (prod)
 
-// Make PHPSESSID cookie visible site-wide so apps can hit /api/*
-session_set_cookie_params([
-  'path' => '/',
-  'httponly' => true,
-  'samesite' => 'Lax'
-]);
 session_start();
-
 header('Content-Type: application/json');
+
 require_once __DIR__ . '/../../config/db.php';
-
-if (!isset($_SESSION['parent_id'])) {
-  echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-  exit;
-}
-
-$parent_id = (int)$_SESSION['parent_id'];
-$debug = isset($_GET['debug']); // <- Add ?debug=1 to see diagnostics
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 $conn->set_charset('utf8mb4');
 
+// -------------------------------------------------------------
+// Determine parent_id
+// -------------------------------------------------------------
+$debug = isset($_GET['debug']); // add ?debug=1 to include diagnostics
+
+$parent_id = isset($_SESSION['parent_id']) ? (int)$_SESSION['parent_id'] : 0;
+
+// ===== TEST OVERRIDE (for manual testing ONLY) =====
+// Allow ?parent_id=1 (or POST) when there is no session.
+if ($parent_id <= 0 && (isset($_GET['parent_id']) || isset($_POST['parent_id']))) {
+  $parent_id = (int)($_GET['parent_id'] ?? $_POST['parent_id']);
+}
+// ===== END TEST OVERRIDE =====
+
+if ($parent_id <= 0) {
+  echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+  exit;
+}
+
 try {
-  // 0) ACTIVE SY
+  // -------------------------------------------------------------
+  // 0) ACTIVE school year
+  // -------------------------------------------------------------
   $syStmt = $conn->prepare("SELECT school_year_id FROM school_years WHERE status='active' LIMIT 1");
   $syStmt->execute();
   $activeSy = $syStmt->get_result()->fetch_column();
@@ -38,7 +45,9 @@ try {
     exit;
   }
 
-  // 1) Children of this parent
+  // -------------------------------------------------------------
+  // 1) All children (students) of this parent
+  // -------------------------------------------------------------
   $kids = [];
   $kidStmt = $conn->prepare("SELECT student_id FROM students WHERE parent_id = ?");
   $kidStmt->bind_param('i', $parent_id);
@@ -54,7 +63,9 @@ try {
     exit;
   }
 
+  // -------------------------------------------------------------
   // 2) Advisory IDs from student_enrollments for ACTIVE SY
+  // -------------------------------------------------------------
   $placeKids = implode(',', array_fill(0, count($kids), '?'));
   $typesKids = str_repeat('i', count($kids));
   $sqlAdvisories = "
@@ -80,7 +91,9 @@ try {
     exit;
   }
 
-  // 3) Announcements for those classes (PARENT/BOTH) and not expired
+  // -------------------------------------------------------------
+  // 3) Announcements for those advisory_ids (PARENT/BOTH), not expired
+  // -------------------------------------------------------------
   $in = implode(',', array_fill(0, count($advisoryIds), '?'));
   $types = str_repeat('i', count($advisoryIds));
   $sql = "
@@ -96,6 +109,7 @@ try {
     ORDER BY a.date_posted DESC
     LIMIT 200
   ";
+
   $a = $conn->prepare($sql);
   $a->bind_param($types, ...$advisoryIds);
   $a->execute();
@@ -120,6 +134,7 @@ try {
   $out = ['success' => true, 'announcements' => $rows];
   if ($debug) $out['debug'] = ['active_sy' => $activeSy, 'kids' => $kids, 'advisories' => $advisoryIds];
   echo json_encode($out);
+
 } catch (Throwable $e) {
   echo json_encode(['success' => false, 'message' => 'Server error', 'error' => $e->getMessage()]);
 }
