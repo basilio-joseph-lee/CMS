@@ -1,9 +1,16 @@
 <?php
 // /CMS/api/parent/get_parent_announcements.php  (local)
 // https://myschoolness.site/api/parent/get_parent_announcements.php  (prod)
-session_start();
-header('Content-Type: application/json');
 
+// Make PHPSESSID cookie visible site-wide so apps can hit /api/*
+session_set_cookie_params([
+  'path' => '/',
+  'httponly' => true,
+  'samesite' => 'Lax'
+]);
+session_start();
+
+header('Content-Type: application/json');
 require_once __DIR__ . '/../../config/db.php';
 
 if (!isset($_SESSION['parent_id'])) {
@@ -12,24 +19,26 @@ if (!isset($_SESSION['parent_id'])) {
 }
 
 $parent_id = (int)$_SESSION['parent_id'];
+$debug = isset($_GET['debug']); // <- Add ?debug=1 to see diagnostics
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 $conn->set_charset('utf8mb4');
 
 try {
-  // 0) Resolve ACTIVE school year
+  // 0) ACTIVE SY
   $syStmt = $conn->prepare("SELECT school_year_id FROM school_years WHERE status='active' LIMIT 1");
   $syStmt->execute();
-  $syRes = $syStmt->get_result();
-  $activeSy = $syRes->fetch_column();
+  $activeSy = $syStmt->get_result()->fetch_column();
   $syStmt->close();
 
   if (!$activeSy) {
-    echo json_encode(['success' => true, 'announcements' => []]);
+    $out = ['success' => true, 'announcements' => []];
+    if ($debug) $out['debug'] = ['active_sy' => null, 'kids' => [], 'advisories' => []];
+    echo json_encode($out);
     exit;
   }
 
-  // 1) Get all children (students) of this parent
+  // 1) Children of this parent
   $kids = [];
   $kidStmt = $conn->prepare("SELECT student_id FROM students WHERE parent_id = ?");
   $kidStmt->bind_param('i', $parent_id);
@@ -39,15 +48,15 @@ try {
   $kidStmt->close();
 
   if (empty($kids)) {
-    echo json_encode(['success' => true, 'announcements' => []]);
+    $out = ['success' => true, 'announcements' => []];
+    if ($debug) $out['debug'] = ['active_sy' => $activeSy, 'kids' => [], 'advisories' => []];
+    echo json_encode($out);
     exit;
   }
 
-  // 2) From student_enrollments, collect advisory_ids for ACTIVE school year
-  //    (This is the reliable source of class membership.)
+  // 2) Advisory IDs from student_enrollments for ACTIVE SY
   $placeKids = implode(',', array_fill(0, count($kids), '?'));
   $typesKids = str_repeat('i', count($kids));
-
   $sqlAdvisories = "
     SELECT DISTINCT e.advisory_id
     FROM student_enrollments e
@@ -61,22 +70,19 @@ try {
   $stmt->execute();
   $rs = $stmt->get_result();
   $advisoryIds = [];
-  while ($row = $rs->fetch_assoc()) {
-    $advisoryIds[] = (int)$row['advisory_id'];
-  }
+  while ($row = $rs->fetch_assoc()) $advisoryIds[] = (int)$row['advisory_id'];
   $stmt->close();
 
   if (empty($advisoryIds)) {
-    // No advisory memberships found for active SY => no class-bound announcements
-    echo json_encode(['success' => true, 'announcements' => []]);
+    $out = ['success' => true, 'announcements' => []];
+    if ($debug) $out['debug'] = ['active_sy' => $activeSy, 'kids' => $kids, 'advisories' => []];
+    echo json_encode($out);
     exit;
   }
 
-  // 3) Fetch announcements for those classes.
-  //    Note: Audience filter for PARENT/BOTH; respect visibility window.
+  // 3) Announcements for those classes (PARENT/BOTH) and not expired
   $in = implode(',', array_fill(0, count($advisoryIds), '?'));
   $types = str_repeat('i', count($advisoryIds));
-
   $sql = "
     SELECT a.id, a.title, a.message, a.audience, a.date_posted, a.visible_until,
            c.class_name, s.subject_name, t.teacher_fullname
@@ -85,12 +91,11 @@ try {
     LEFT JOIN subjects s ON a.subject_id = s.subject_id
     LEFT JOIN teachers t ON a.teacher_id = t.teacher_id
     WHERE a.class_id IN ($in)
-      AND (a.audience IN ('PARENT','BOTH'))
+      AND a.audience IN ('PARENT','BOTH')
       AND (a.visible_until IS NULL OR a.visible_until >= CURDATE())
     ORDER BY a.date_posted DESC
     LIMIT 200
   ";
-
   $a = $conn->prepare($sql);
   $a->bind_param($types, ...$advisoryIds);
   $a->execute();
@@ -112,7 +117,9 @@ try {
   }
   $a->close();
 
-  echo json_encode(['success' => true, 'announcements' => $rows]);
+  $out = ['success' => true, 'announcements' => $rows];
+  if ($debug) $out['debug'] = ['active_sy' => $activeSy, 'kids' => $kids, 'advisories' => $advisoryIds];
+  echo json_encode($out);
 } catch (Throwable $e) {
   echo json_encode(['success' => false, 'message' => 'Server error', 'error' => $e->getMessage()]);
 }
