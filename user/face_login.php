@@ -90,8 +90,7 @@ const APP_BASE = <?= json_encode($BASE) ?>;
 const ORIGIN = window.location.origin;
 const LOGIN_URL  = ORIGIN + APP_BASE + '/config/login_by_student.php';
 const SELECT_URL = ORIGIN + APP_BASE + '/user/teacher/select_subject.php';
-
-const MODELS_URL_PRIMARY = '../models';
+const MODELS_URL_PRIMARY = ORIGIN + '/models'; 
 // Safer + snappier
 const DISTANCE_THRESHOLD = 0.45;    // stricter accept
 const DISTANCE_MARGIN     = 0.10;   // best must beat 2nd-best by this gap
@@ -117,21 +116,25 @@ function normalizePath(p){
 
 async function waitForFaceApi(){ for (let i=0;i<200;i++){ if (window.faceapi) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('face-api.js failed to load'); }
 async function resolveModelsUrl() {
-  const probe = (url) => fetch(url + '/face_recognition_model-weights_manifest.json', { cache: 'no-store' }).then(r => r.ok).catch(() => false);
-  // Try relative models folder first
-  const rel = MODELS_URL_PRIMARY;
-  if (await probe(rel)) return rel;
-  // Then absolute to app base
-  const abs = ORIGIN + APP_BASE + '/models';
-  if (await probe(abs)) return abs;
-  return rel; // fallback (error will show later if truly missing)
+  // You confirmed models live at https://myschoolness.site/models
+  return MODELS_URL_PRIMARY;
 }
+
 async function loadModels(){
+  // Ensure TF is ready before face-api model loads
+  if (window.tf && tf.ready) { try { await tf.ready(); } catch(e) {} }
   const base = await resolveModelsUrl();
-  await faceapi.nets.tinyFaceDetector.loadFromUri(base);
-  await faceapi.nets.faceLandmark68Net.loadFromUri(base);
-  await faceapi.nets.faceRecognitionNet.loadFromUri(base);
+  try {
+    await faceapi.nets.tinyFaceDetector.loadFromUri(base);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(base);
+    await faceapi.nets.faceRecognitionNet.loadFromUri(base);
+  } catch (e) {
+    console.error('Model load error:', e);
+    setStatus('🚫 Setup error: could not load models from ' + base);
+    throw e;
+  }
 }
+
 async function startCam(){
   const video = document.getElementById('video');
   stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 }, audio: false });
@@ -289,7 +292,7 @@ try {
 } catch (e) {
   console.error(e); setStatus('❌ Network/server error during verification.');
 }
-
+}
 
 async function init(){
   try{
