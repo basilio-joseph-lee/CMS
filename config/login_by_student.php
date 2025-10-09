@@ -1,4 +1,3 @@
-login by student 
 <?php
 // /config/login_by_student.php
 session_start(); // keep this, we will re-send cookie below
