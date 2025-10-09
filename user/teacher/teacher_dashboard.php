@@ -137,7 +137,7 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
     <a href="add_student.php" class="relative pin block rounded-2xl focus-visible:focus-outline">
       <div class="card bg-blue-100">
         <div class="card-icon">🎥</div>
-        <div class="font-bold text-sm sm:text-base">Enroll Student</div>
+        <div class="font-bold text-sm sm:text-base">Add Student</div>
       </div>
     </a>
 
