@@ -1,4 +1,3 @@
-list all face 
 <?php
 // /api/list_faces_all.php
 header('Content-Type: application/json; charset=utf-8');

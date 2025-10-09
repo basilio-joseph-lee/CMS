@@ -1,4 +1,3 @@
-face log 
 <?php
 /**
  * face_login.php — production-safe
