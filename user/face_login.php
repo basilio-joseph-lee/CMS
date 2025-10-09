@@ -170,30 +170,71 @@ async function detectOneWithProfiles(img){
   return null;
 }
 
-async function buildMatcher(){
+async function buildMatcher() {
   const labeled = [];
+  indexByLabel.clear();
+
+  // 1) Try precomputed descriptors first (fast path)
+  setStatus('Loading precomputed descriptors…');
+  let pre = [];
+  try {
+    const r = await fetch(ORIGIN + APP_BASE + '/api/list_face_descriptors.php', { method:'POST' });
+    if (r.ok) pre = await r.json();
+  } catch {}
+  if (Array.isArray(pre) && pre.length > 0) {
+    for (const row of pre) {
+      const label = String(row.student_id);
+      const vec = new Float32Array(row.descriptor);
+      labeled.push(new faceapi.LabeledFaceDescriptors(label, [vec]));
+      // fullname is optional in API; fall back to generic name if missing
+      indexByLabel.set(label, { id: row.student_id, name: row.fullname || ('Student ' + label) });
+    }
+    matcher = new faceapi.FaceMatcher(labeled, DISTANCE_THRESHOLD);
+    setStatus(`Loaded ${labeled.length} descriptors.`);
+    return;
+  }
+
+  // 2) Fallback: compute from images (first run) AND seed server for next time
   let done = 0, total = roster.length;
-  for (const row of roster){
+  for (const row of roster) {
     const url = row.face_image_url || normalizePath(row.face_image_path);
-    if (!url) { setStatus(`Preparing faces… ${done}/${total}`); continue; }
-    try{
+    if (!url) { done++; setStatus(`Preparing faces… ${done}/${total}`); continue; }
+
+    try {
       const blob = await fetch(url, { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.blob(); });
       const img  = await new Promise(res => { const i = new Image(); i.onload = () => res(i); i.src = URL.createObjectURL(blob); });
+
       const det  = await detectOneWithProfiles(img);
-      if (det){
+      if (det && det.descriptor) {
         const label = String(row.student_id);
         labeled.push(new faceapi.LabeledFaceDescriptors(label, [det.descriptor]));
         indexByLabel.set(label, { id: row.student_id, name: row.fullname });
+
+        // --- seed the descriptor on the server (so next loads are instant)
+        try {
+          await fetch(SAVE_DESC_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              student_id: row.student_id,
+              descriptor: Array.from(det.descriptor)
+            })
+          });
+        } catch (e) {
+          console.warn('Save descriptor failed for student', row.student_id, e);
+        }
       }
-    }catch(err){
+    } catch (err) {
       console.warn('Reference image error:', err);
-    }finally{
+    } finally {
       done++; setStatus(`Preparing faces… ${done}/${total}`);
     }
   }
+
   if (!labeled.length) throw new Error('No reference faces loaded.');
   matcher = new faceapi.FaceMatcher(labeled, DISTANCE_THRESHOLD);
 }
+
 
 async function scanLoop(){
   if (!ready || !matcher) return;
