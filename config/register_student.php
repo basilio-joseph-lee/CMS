@@ -184,6 +184,10 @@ try {
       $u->execute();
       $u->close();
 
+      // Invalidate descriptor so it refreshes (24h cron or next login will reseed)
+    $conn->query("UPDATE student_face_descriptors SET stale = 1 WHERE student_id = " . (int)$student_id);
+
+
       // Optional gallery (if you created table student_faces)
       $chk = $conn->query("SHOW TABLES LIKE 'student_faces'");
       if ($chk && $chk->num_rows > 0) {

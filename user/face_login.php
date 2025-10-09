@@ -46,8 +46,16 @@ unset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['advisory_id
 <head>
   <meta charset="UTF-8" />
   <title>Face Recognition Login</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Enable GPU: WebGL backend gives 2–5× speedup -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script>
+  if (window.tf && tf.setBackend) {
+    tf.setBackend('webgl').then(() => tf.ready());
+  }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
   <style>
     body {
       background: url('../img/1.png') no-repeat center center fixed;
@@ -84,12 +92,15 @@ const LOGIN_URL  = ORIGIN + APP_BASE + '/config/login_by_student.php';
 const SELECT_URL = ORIGIN + APP_BASE + '/user/teacher/select_subject.php';
 
 const MODELS_URL_PRIMARY = '../models';
-const DISTANCE_THRESHOLD = 0.6;
-const PING_MS = 900;
+// Safer + snappier
+const DISTANCE_THRESHOLD = 0.45;    // stricter accept
+const DISTANCE_MARGIN     = 0.10;   // best must beat 2nd-best by this gap
+const MIN_DETECTION_SCORE = 0.35;
+const PING_MS = 300;
+
 const DET_PROFILES = [
-  { inputSize: 512, scoreThreshold: 0.30 },
-  { inputSize: 416, scoreThreshold: 0.30 },
-  { inputSize: 320, scoreThreshold: 0.25 },
+  { inputSize: 416, scoreThreshold: 0.35 },
+  { inputSize: 320, scoreThreshold: 0.30 },
 ];
 
 let stream, matcher = null, roster = [], indexByLabel = new Map();
@@ -123,7 +134,7 @@ async function loadModels(){
 }
 async function startCam(){
   const video = document.getElementById('video');
-  stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+  stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 }, audio: false });
   video.srcObject = stream;
 }
 async function fetchRoster(){
@@ -185,43 +196,100 @@ async function scanLoop(){
   if (!ready || !matcher) return;
 
   const video = document.getElementById('video');
-  const det = await faceapi
-    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 }))
-    .withFaceLandmarks()
-    .withFaceDescriptor();
+// detect ALL faces and require exactly one, then require a frontal pose,
+// then enforce best-vs-second-best margin, then send LIVE descriptor to server
+const detections = await faceapi
+  .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: MIN_DETECTION_SCORE }))
+  .withFaceLandmarks()
+  .withFaceDescriptors();
 
-  if (!det){ setStatus('🔍 Scanning for a face…'); drawBox(null,''); return; }
+if (!detections || detections.length === 0) {
+  setStatus('🔍 Scanning for a face…'); drawBox(null,'');
+  return;
+}
+if (detections.length > 1) {
+  setStatus('⚠️ Multiple faces detected — one person only.'); drawBox(null, 'Multiple faces');
+  return;
+}
 
-  const best = matcher.findBestMatch(det.descriptor);
-  if (best && best.label !== 'unknown'){
-    const meta = indexByLabel.get(best.label) || { name: 'Student', id: best.label };
-    const confPct = Math.max(0, Math.min(99, Math.round((1 - best.distance) * 100)));
-    drawBox(det, `${meta.name} ${confPct}%`);
-    setStatus(`✅ Recognized: ${meta.name} (${confPct}%) — logging in…`);
-    clearInterval(scanTimer);
+const det = detections[0];
+if (!det?.descriptor) { setStatus('🔍 Scanning for a face…'); drawBox(null,''); return; }
 
-    try{
-      const body = new URLSearchParams({ student_id: String(meta.id) });
-      const res  = await fetch(LOGIN_URL, {
-        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
-      }).then(r=>r.json());
+// ---- lightweight "frontalness" heuristic via landmarks
+const lm = det.landmarks;
+const leftEye  = lm.getLeftEye();
+const rightEye = lm.getRightEye();
+const nose     = lm.getNose();
+const avgDist = pts => { let d=0; for(let i=1;i<pts.length;i++){ const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y; d+=Math.hypot(dx,dy);} return d/(pts.length-1); };
+const leftEyeSize  = avgDist(leftEye);
+const rightEyeSize = avgDist(rightEye);
+const eyeSizeRatio = leftEyeSize / (rightEyeSize || 1);
+const eyeYDiff = Math.abs((leftEye[0].y + leftEye[leftEye.length-1].y)/2 - (rightEye[0].y + rightEye[rightEye.length-1].y)/2);
+const noseTip = nose[Math.floor(nose.length/2)];
+const eyeCenterX = ((leftEye[0].x + leftEye[leftEye.length-1].x)/2 + (rightEye[0].x + rightEye[rightEye.length-1].x)/2)/2;
+const noseOffsetX = Math.abs(noseTip.x - eyeCenterX);
 
-      if (res && res.success){
-        // Use an ABSOLUTE URL so the browser never treats "user" as a hostname.
-        window.location.replace(SELECT_URL);
-      } else {
-        setStatus('⚠️ Login failed on server. Retrying…');
-        scanTimer = setInterval(scanLoop, PING_MS);
-      }
-    } catch(e) {
-      console.error(e);
-      setStatus('❌ Network/login error.');
-      scanTimer = setInterval(scanLoop, PING_MS);
+const MAX_EYE_SIZE_RATIO = 1.25, MAX_EYE_Y_DIFF = 12, MAX_NOSE_X_OFFSET = 18;
+if (eyeSizeRatio > MAX_EYE_SIZE_RATIO || eyeSizeRatio < (1/MAX_EYE_SIZE_RATIO) || eyeYDiff > MAX_EYE_Y_DIFF || noseOffsetX > MAX_NOSE_X_OFFSET) {
+  setStatus('⚠️ Please face the camera directly (front view).');
+  drawBox(det, 'Turn face forward');
+  return;
+}
+
+// ---- compute best & second-best distances to enforce margin
+const distances = matcher.labeledDescriptors.map(ld => {
+  const d1 = det.descriptor, d2 = ld.descriptors[0];
+  let s = 0; for (let i=0;i<d1.length;i++){ const q=d1[i]-d2[i]; s+=q*q; } return { label: ld.label, dist: Math.sqrt(s) };
+}).sort((a,b)=>a.dist-b.dist);
+
+if (!distances.length) { setStatus('❌ No reference faces loaded.'); return; }
+const best = distances[0], second = distances[1] || { dist: 999 };
+
+if (best.dist > DISTANCE_THRESHOLD) {
+  drawBox(det, 'Unknown'); setStatus('❌ Face not recognized.'); return;
+}
+if ((second.dist - best.dist) < DISTANCE_MARGIN) {
+  drawBox(det, 'Ambiguous'); setStatus('⚠️ Match ambiguous — step closer & face camera.'); return;
+}
+
+const meta = indexByLabel.get(best.label) || { name: 'Student', id: best.label };
+drawBox(det, `${meta.name} (${Math.round((1-best.dist)*100)}%)`);
+setStatus(`✅ Candidate: ${meta.name} — verifying…`);
+
+try {
+  const payload = { student_id: String(meta.id), descriptor: Array.from(det.descriptor) };
+  const res = await fetch(LOGIN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type':'application/json' },
+    body: JSON.stringify(payload),
+  }).then(r => r.json());
+
+  if (res?.success) {
+    window.location.replace(SELECT_URL);
+  } else if (res?.message === 'no_server_descriptor') {
+    // Seed once (Phase 1 bootstrap) then retry
+    await fetch(ORIGIN + APP_BASE + '/api/save_face_descriptor.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const retry = await fetch(LOGIN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(payload),
+    }).then(r => r.json());
+    if (retry?.success) {
+      window.location.replace(SELECT_URL);
+    } else {
+      setStatus('⚠️ Server verification failed: ' + (retry?.message || 'unknown'));
     }
   } else {
-    drawBox(det, 'Unknown'); setStatus('❌ Face not recognized.');
+    setStatus('⚠️ Server verification failed: ' + (res?.message || 'unknown'));
   }
+} catch (e) {
+  console.error(e); setStatus('❌ Network/server error during verification.');
 }
+
 
 async function init(){
   try{
@@ -230,7 +298,8 @@ async function init(){
     setStatus('Loading face roster…'); await fetchRoster(); if (!roster.length) throw new Error('No reference faces from API.');
     setStatus('Preparing faces…'); await buildMatcher();
     ready = true; setStatus('🔍 Scanning for a face…');
-    scanTimer = setInterval(scanLoop, PING_MS);
+    function tick(){ scanLoop().finally(()=>setTimeout(()=>requestAnimationFrame(tick), PING_MS)); }
+requestAnimationFrame(tick);
   }catch(e){ console.error(e); setStatus('🚫 Setup error: ' + e.message); }
 }
 window.addEventListener('load', init);
