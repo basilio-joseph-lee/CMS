@@ -137,7 +137,7 @@ $femaleAvatars = [
           <div class="space-y-4">
             <!-- Avatar Preview (always shows chosen 2D character) -->
             <div class="bg-yellow-100 rounded-xl p-4 text-center">
-              <img id="avatarPreview" src="../../img/default.png" alt="Avatar preview" class="w-24 h-24 mx-auto mb-3 rounded">
+              <img id="avatarPreview" src="../../img/default.png" alt="Avatar preview " class="w-24 h-24 mx-auto mb-3 rounded">
               <div class="flex items-center justify-center gap-3">
                 <p class="text-gray-700 font-semibold">Avatar Preview</p>
                 <button type="button" class="ml-2 px-3 py-2 rounded-md bg-indigo-600 text-white text-sm font-semibold"
