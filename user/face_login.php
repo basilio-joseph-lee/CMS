@@ -46,11 +46,8 @@ unset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['advisory_id
 <head>
   <meta charset="UTF-8" />
   <title>Face Recognition Login</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<!-- Add TensorFlow.js (required for best perf & WebGL) -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <style>
     body {
       background: url('../img/1.png') no-repeat center center fixed;
@@ -88,19 +85,7 @@ const SELECT_URL = ORIGIN + APP_BASE + '/user/teacher/select_subject.php';
 
 const MODELS_URL_PRIMARY = '../models';
 const DISTANCE_THRESHOLD = 0.6;
-const SCAN_MIN_MS = 120; // throttle so we don't run every frame
-let lastScan = 0;
-let rafId = 0;
-
-function loop(){
-  rafId = requestAnimationFrame(loop);
-  const now = performance.now();
-  if (!ready || !matcher) return;
-  if (now - lastScan < SCAN_MIN_MS) return;
-  lastScan = now;
-  scanLoop(); // fire detection
-}
-
+const PING_MS = 900;
 const DET_PROFILES = [
   { inputSize: 512, scoreThreshold: 0.30 },
   { inputSize: 416, scoreThreshold: 0.30 },
@@ -130,14 +115,6 @@ async function resolveModelsUrl() {
   if (await probe(abs)) return abs;
   return rel; // fallback (error will show later if truly missing)
 }
-// Force WebGL backend for speed; fallback to wasm/cpu if unavailable
-async function selectBackend(){
-  try {
-    await tf.setBackend('webgl');
-  } catch { /* ignore */ }
-  await tf.ready();
-}
-
 async function loadModels(){
   const base = await resolveModelsUrl();
   await faceapi.nets.tinyFaceDetector.loadFromUri(base);
@@ -146,13 +123,7 @@ async function loadModels(){
 }
 async function startCam(){
   const video = document.getElementById('video');
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      width: { ideal: 320 }, height: { ideal: 240 },
-      facingMode: 'user'   // front camera on phones
-    },
-    audio: false
-  });
+  stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
   video.srcObject = stream;
 }
 async function fetchRoster(){
@@ -273,7 +244,7 @@ async function scanLoop(){
     const confPct = Math.max(0, Math.min(99, Math.round((1 - best.distance) * 100)));
     drawBox(det, `${meta.name} ${confPct}%`);
     setStatus(`✅ Recognized: ${meta.name} (${confPct}%) — logging in…`);
-    cancelAnimationFrame(rafId);
+    clearInterval(scanTimer);
 
     try{
       const body = new URLSearchParams({ student_id: String(meta.id) });
@@ -286,7 +257,7 @@ async function scanLoop(){
         window.location.replace(SELECT_URL);
       } else {
         setStatus('⚠️ Login failed on server. Retrying…');
-        if (!rafId) rafId = requestAnimationFrame(loop);
+        scanTimer = setInterval(scanLoop, PING_MS);
       }
     } catch(e) {
       console.error(e);
