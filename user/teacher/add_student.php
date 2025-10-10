@@ -155,6 +155,8 @@ $femaleAvatars = [
           </div>
 
           <form action="../../config/register_student.php" method="POST" enctype="multipart/form-data" class="space-y-4 mt-4" id="addStudentForm">
+            <input type="hidden" name="descriptor_json" id="descriptor_json">
+
             <input type="hidden" name="school_year_id" value="<?= htmlspecialchars($school_year_id) ?>">
             <input type="hidden" name="advisory_id"    value="<?= htmlspecialchars($advisory_id) ?>">
             <input type="hidden" name="subject_id"     value="<?= htmlspecialchars($subject_id) ?>">
@@ -356,5 +358,85 @@ $femaleAvatars = [
   });
   document.getElementById('tabMaleBtn').dataset.active = 'true';
 </script>
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script>
+/* ========= Descriptor helper (no style changes) ========= */
+
+// If your page lives under /CMS on local, models are at /CMS/models; on prod at /models.
+(function(){
+  const APP_BASE = (location.pathname.startsWith('/CMS/')) ? '/CMS' : '';
+  const MODELS = APP_BASE + '/models';
+
+  // singleton load
+  let _modelsPromise = null;
+  async function loadModelsOnce() {
+    if (_modelsPromise) return _modelsPromise;
+    _modelsPromise = (async () => {
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODELS);
+      await faceapi.nets.faceLandmark68Net.loadFromUri(MODELS);
+      await faceapi.nets.faceRecognitionNet.loadFromUri(MODELS);
+      return true;
+    })();
+    return _modelsPromise;
+  }
+
+  // Utility: get an HTMLCanvasElement with the face image we want to embed
+  function getCaptureCanvas() {
+    // Prefer an existing canvas if you already draw the snapshot there
+    const c1 = document.getElementById('capturedCanvas');
+    if (c1 && c1.getContext) return c1;
+
+    // Fallback: draw current video frame to an offscreen canvas
+    const v = document.getElementById('video') || document.querySelector('video');
+    if (!v) return null;
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth || 320;
+    c.height = v.videoHeight || 240;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(v, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  async function computeDescriptorArray() {
+    await loadModelsOnce();
+    const canvas = getCaptureCanvas();
+    if (!canvas) return null;
+
+    const det = await faceapi
+      .detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 }))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+
+    if (!det || !det.descriptor) return null;
+    return Array.from(det.descriptor); // Float32Array -> plain array (length 128)
+  }
+
+  // Wire to form submit: fill #descriptor_json before sending
+  window._wireDescriptorToForm = function(formId = 'addStudentForm') {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    const hidden = document.getElementById('descriptor_json');
+
+    form.addEventListener('submit', async (e) => {
+      // If you already computed once during "Capture", you can skip here.
+      // But to be safe, we compute now if empty.
+      if (hidden && !hidden.value) {
+        try {
+          const vec = await computeDescriptorArray();
+          hidden.value = (vec && vec.length === 128) ? JSON.stringify(vec) : '';
+        } catch (err) {
+          console.warn('Descriptor compute failed:', err);
+          if (hidden) hidden.value = '';
+        }
+      }
+      // do not preventDefault; allow normal submit to continue
+    }, { passive: true });
+  };
+
+  // Auto-wire on DOM ready
+  document.addEventListener('DOMContentLoaded', () => _wireDescriptorToForm('addStudentForm'));
+})();
+</script>
+
 </body>
 </html>

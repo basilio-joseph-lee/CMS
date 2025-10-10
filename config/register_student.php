@@ -3,6 +3,7 @@
  * /config/register_student.php
  * - Lookup-or-create student (no duplicates in `students`)
  * - Save optional captured face (base64) and update students.face_image_path
+ * - Upsert precomputed face descriptor (128 floats) into student_face_descriptors
  * - Enroll into student_enrollments with ON DUPLICATE KEY UPDATE
  * - Works both on localhost/CMS and production (no hard-coded domain in redirects)
  */
@@ -77,10 +78,11 @@ $facesFs  = rtrim($_SERVER['DOCUMENT_ROOT'], '/') . $facesWeb;
 $avatarFs = rtrim($_SERVER['DOCUMENT_ROOT'], '/') . $avatarWeb;
 
 /* ---------- Read form ---------- */
-$fullname        = trim($_POST['fullname'] ?? '');
-$gender          = trim($_POST['gender'] ?? '');
-$capturedFace    = $_POST['captured_face'] ?? '';      // data URL (optional)
-$chosenAvatar    = trim($_POST['avatar_path'] ?? '');  // optional, may be full URL or path
+$fullname         = trim($_POST['fullname'] ?? '');
+$gender           = trim($_POST['gender'] ?? '');
+$capturedFace     = $_POST['captured_face'] ?? '';      // data URL (optional)
+$chosenAvatar     = trim($_POST['avatar_path'] ?? '');  // optional, may be full URL or path
+$descriptorJsonIn = $_POST['descriptor_json'] ?? '';    // OPTIONAL: JSON array of 128 floats (from face-api.js)
 
 $school_year_id  = (int)($_SESSION['school_year_id'] ?? 0);
 $advisory_id     = (int)($_SESSION['advisory_id'] ?? 0);
@@ -114,7 +116,6 @@ if ($chosenAvatar !== '') {
   $candidate = $avatarFs . '/' . $file;
   if (!is_file($candidate)) {
     // If not found, leave as-is (CDN or absolute may be allowed), but prefer root-relative if we can
-    // You can tighten this if you want to restrict to local list only.
   } else {
     $p = $avatarWeb . '/' . $file;
   }
@@ -122,6 +123,16 @@ if ($chosenAvatar !== '') {
 }
 
 /* ---------- Main flow: lookup-or-create → save face → enroll ---------- */
+
+// Tiny validator: returns normalized JSON string if valid (128 numbers), else ''
+function normalize_descriptor_json($raw) {
+  if (!is_string($raw) || $raw === '') return '';
+  $arr = json_decode($raw, true);
+  if (!is_array($arr) || count($arr) !== 128) return '';
+  foreach ($arr as $v) { if (!is_numeric($v)) return ''; }
+  return json_encode(array_map('floatval', $arr), JSON_UNESCAPED_UNICODE);
+}
+
 $conn->begin_transaction();
 try {
   $student_id = null;
@@ -176,6 +187,7 @@ try {
   }
 
   // 4) Save captured face (if provided) and update primary face path
+  $newFacePath = '';
   if ($capturedFace !== '') {
     $newFacePath = save_face_b64($capturedFace, $facesWeb);
     if ($newFacePath !== '') {
@@ -183,21 +195,38 @@ try {
       $u->bind_param("si", $newFacePath, $student_id);
       $u->execute();
       $u->close();
-
-      // Invalidate descriptor so it refreshes (24h cron or next login will reseed)
-    $conn->query("UPDATE student_face_descriptors SET stale = 1 WHERE student_id = " . (int)$student_id);
-
-
-      // Optional gallery (if you created table student_faces)
-      $chk = $conn->query("SHOW TABLES LIKE 'student_faces'");
-      if ($chk && $chk->num_rows > 0) {
-        $g = $conn->prepare("INSERT INTO student_faces (student_id, face_image_path) VALUES (?, ?)");
-        $g->bind_param("is", $student_id, $newFacePath);
-        $g->execute();
-        $g->close();
-      }
-      if ($chk) $chk->free();
     }
+  }
+
+  // 4.1) Upsert descriptor if provided; else mark any existing as stale (so backfill can refresh later)
+  // Use the most recent face path we know (newly saved, or existing one)
+  $curFacePath = $newFacePath;
+  if ($curFacePath === '') {
+    $row = $conn->query("SELECT face_image_path FROM students WHERE student_id=" . (int)$student_id)->fetch_assoc();
+    $curFacePath = (string)($row['face_image_path'] ?? '');
+  }
+
+  $norm = normalize_descriptor_json($descriptorJsonIn);
+  if ($norm !== '') {
+    // Fresh descriptor available from client (best path) → upsert and mark fresh
+    $up = $conn->prepare("
+      INSERT INTO student_face_descriptors (student_id, descriptor_json, face_image_path, updated_at, stale)
+      VALUES (?, ?, ?, NOW(), 0)
+      ON DUPLICATE KEY UPDATE
+        descriptor_json = VALUES(descriptor_json),
+        face_image_path = VALUES(face_image_path),
+        updated_at = VALUES(updated_at),
+        stale = 0
+    ");
+    $up->bind_param("iss", $student_id, $norm, $curFacePath);
+    $up->execute();
+    $up->close();
+  } else {
+    // No descriptor provided now; mark previous vector stale so a later tool/backfill can regenerate
+    $stmt = $conn->prepare("UPDATE student_face_descriptors SET stale = 1, updated_at = NOW(), face_image_path = ? WHERE student_id = ?");
+    $stmt->bind_param("si", $curFacePath, $student_id);
+    $stmt->execute();
+    $stmt->close();
   }
 
   // 5) Enroll (idempotent). Requires UNIQUE index on (student_id, advisory_id, school_year_id, subject_id)
