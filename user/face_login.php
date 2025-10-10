@@ -1,8 +1,9 @@
 <?php
 /**
- * face_login.php — production-safe
- * - Consistent student session (works on localhost/CMS and on your domain)
- * - Absolute redirects so the browser never treats "user" as a domain
+ * face_login.php — fast scan version
+ * - Consistent sessions (localhost/CMS and production)
+ * - Absolute redirects
+ * - Uses precomputed vectors first (with local cache); optional image fallback
  */
 
 function is_https() {
@@ -47,6 +48,8 @@ unset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['advisory_id
   <meta charset="UTF-8" />
   <title>Face Recognition Login</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Perf: use TFJS so face-api can run on GPU (WebGL) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <style>
     body {
@@ -81,11 +84,20 @@ const APP_BASE = <?= json_encode($BASE) ?>;
 // Build absolute URLs (prevents "user" being treated as a domain)
 const ORIGIN = window.location.origin;
 const LOGIN_URL  = ORIGIN + APP_BASE + '/config/login_by_student.php';
-const SELECT_URL = ORIGIN + APP_BASE + '/user/teacher/select_subject.php';
+const SELECT_URL = ORIGIN + APP_BASE + '/user/teacher/select_subject.php'; // keep as your current target
 
+// Models & matching
 const MODELS_URL_PRIMARY = '../models';
 const DISTANCE_THRESHOLD = 0.6;
-const PING_MS = 900;
+
+// Perf loop settings
+const SCAN_MIN_MS = 120; // throttle detection so it's not every paint
+
+// Vector cache keys
+const VEC_CACHE_KEY = 'face_vectors_cache';
+const VEC_CACHE_VER = 'face_vectors_version';
+
+// Detector profiles (used for image-fallback only)
 const DET_PROFILES = [
   { inputSize: 512, scoreThreshold: 0.30 },
   { inputSize: 416, scoreThreshold: 0.30 },
@@ -93,9 +105,20 @@ const DET_PROFILES = [
 ];
 
 let stream, matcher = null, roster = [], indexByLabel = new Map();
-let scanTimer = null, ready = false;
+let rafId = 0, lastScan = 0, ready = false;
+let currentInputSize = 320; // adaptive input size for live video
+let lastSeenTs = 0;
 
-function setStatus(txt){ document.getElementById('status').textContent = txt; }
+let _lastStatus = '';
+let _lastStatusTs = 0;
+
+function setStatus(txt){
+  const now = performance.now();
+  if (txt === _lastStatus && now - _lastStatusTs < 250) return; // debounce UI churn
+  _lastStatus = txt; _lastStatusTs = now;
+  document.getElementById('status').textContent = txt;
+}
+
 function normalizePath(p){
   if(!p) return '';
   p = String(p).trim().replace(/^\.?\//,'');
@@ -105,15 +128,17 @@ function normalizePath(p){
 }
 
 async function waitForFaceApi(){ for (let i=0;i<200;i++){ if (window.faceapi) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('face-api.js failed to load'); }
+async function selectBackend(){
+  try { await tf.setBackend('webgl'); } catch {}
+  await tf.ready();
+}
 async function resolveModelsUrl() {
   const probe = (url) => fetch(url + '/face_recognition_model-weights_manifest.json', { cache: 'no-store' }).then(r => r.ok).catch(() => false);
-  // Try relative models folder first
   const rel = MODELS_URL_PRIMARY;
   if (await probe(rel)) return rel;
-  // Then absolute to app base
   const abs = ORIGIN + APP_BASE + '/models';
   if (await probe(abs)) return abs;
-  return rel; // fallback (error will show later if truly missing)
+  return rel;
 }
 async function loadModels(){
   const base = await resolveModelsUrl();
@@ -123,32 +148,12 @@ async function loadModels(){
 }
 async function startCam(){
   const video = document.getElementById('video');
-  stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+  // Lower resolution = less compute per frame, still enough for TinyFaceDetector
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' },
+    audio: false
+  });
   video.srcObject = stream;
-}
-async function fetchRoster(){
-  // Try fast path: precomputed vectors
-  try {
-    const r = await fetch(ORIGIN + APP_BASE + '/api/list_face_vectors.php', { method:'GET', cache:'no-store' });
-    if (r.ok) {
-      const data = await r.json();
-      if (data && Array.isArray(data.vectors) && data.vectors.length) {
-        roster = data.vectors.map(v => ({
-          student_id: v.student_id,
-          fullname: v.fullname,
-          descriptor: Array.isArray(v.descriptor) ? v.descriptor : []
-        }));
-        return; // success, skip image-based fallback
-      }
-    }
-  } catch (e) {
-    console.warn('Vector API failed, fallback to images…', e);
-  }
-
-  // Fallback (old behavior)
-  const res = await fetch(ORIGIN + APP_BASE + '/api/list_faces_all.php', { method:'POST' });
-  roster = await res.json();
-  if (!Array.isArray(roster)) roster = [];
 }
 
 function drawBox(det, label){
@@ -159,9 +164,79 @@ function drawBox(det, label){
   const { box } = det.detection;
   ctx.strokeStyle = 'lime'; ctx.lineWidth = 2; ctx.strokeRect(box.x, box.y, box.width, box.height);
   ctx.fillStyle='rgba(0,0,0,.6)'; const tag = String(label||'');
-  const tw = Math.min(160, ctx.measureText(tag).width + 10);
+  ctx.font='12px sans-serif';
+  const tw = Math.min(200, ctx.measureText(tag).width + 10);
   ctx.fillRect(box.x, Math.max(0, box.y-18), tw, 18);
-  ctx.fillStyle='white'; ctx.font='12px sans-serif'; ctx.fillText(tag, box.x+4, Math.max(12, box.y-4));
+  ctx.fillStyle='white'; ctx.fillText(tag, box.x+4, Math.max(12, box.y-4));
+}
+
+// --------- Vectors cache helpers ----------
+function loadVectorsFromCache() {
+  try {
+    const v = localStorage.getItem(VEC_CACHE_KEY);
+    if (!v) return null;
+    const arr = JSON.parse(v);
+    if (!Array.isArray(arr) || !arr.length) return null;
+    return arr;
+  } catch { return null; }
+}
+function saveVectorsToCache(vectors, version) {
+  try {
+    localStorage.setItem(VEC_CACHE_KEY, JSON.stringify(vectors));
+    if (version) localStorage.setItem(VEC_CACHE_VER, String(version));
+  } catch {}
+}
+function getCachedVersion() {
+  const s = localStorage.getItem(VEC_CACHE_VER);
+  return s ? parseInt(s, 10) || 0 : 0;
+}
+
+// --------- Fetch roster (vectors-first + cache; optional image fallback) ----------
+async function fetchRoster(){
+  // 0) Try cache first for instant matcher build
+  const cached = loadVectorsFromCache();
+  if (cached) {
+    roster = cached.map(v => ({ student_id: v.student_id, fullname: v.fullname, descriptor: v.descriptor }));
+  }
+
+  // 1) Fetch server vectors (fast path)
+  try {
+    const since = getCachedVersion();
+    const url = ORIGIN + APP_BASE + '/api/list_face_vectors.php' + (since ? ('?since=' + encodeURIComponent(since)) : '');
+    const r = await fetch(url, { method:'GET', cache:'no-store' });
+    if (r.ok) {
+      const data = await r.json();
+      if (data && Array.isArray(data.vectors)) {
+        // Refresh cache (simple strategy)
+        saveVectorsToCache(data.vectors, data.roster_version || Date.now());
+        roster = data.vectors.map(v => ({
+          student_id: v.student_id,
+          fullname: v.fullname,
+          descriptor: Array.isArray(v.descriptor) ? v.descriptor : []
+        }));
+        return; // Success using vectors
+      }
+    }
+  } catch (e) {
+    console.warn('Vector API failed, using cache if any.', e);
+  }
+
+  // 2) VECTORS-ONLY MODE (uncomment to forbid slow image fallback)
+  // roster = []; return;
+
+  // 3) Otherwise, fallback to old images (will be slow if no vectors)
+  try {
+    const res = await fetch(ORIGIN + APP_BASE + '/api/list_faces_all.php', { method:'POST' });
+    roster = await res.json();
+    if (!Array.isArray(roster)) roster = [];
+  } catch {
+    roster = [];
+  }
+}
+
+function toFloat32(arr){
+  if (!Array.isArray(arr) || arr.length !== 128) return null;
+  try { return new Float32Array(arr); } catch { return null; }
 }
 
 async function detectOneWithProfiles(img){
@@ -174,12 +249,6 @@ async function detectOneWithProfiles(img){
   }
   return null;
 }
-
-function toFloat32(arr){
-  if (!Array.isArray(arr) || arr.length !== 128) return null;
-  try { return new Float32Array(arr); } catch { return null; }
-}
-
 
 async function buildMatcher(){
   // Fast path: use precomputed 128-float vectors if present
@@ -201,7 +270,7 @@ async function buildMatcher(){
     return;
   }
 
-  // Fallback (old behavior uses images)
+  // Image fallback (only if enabled by fetchRoster)
   const labeled = [];
   let done = 0, total = roster.length;
   for (const row of roster){
@@ -226,17 +295,28 @@ async function buildMatcher(){
   matcher = new faceapi.FaceMatcher(labeled, DISTANCE_THRESHOLD);
 }
 
-
 async function scanLoop(){
   if (!ready || !matcher) return;
 
   const video = document.getElementById('video');
+
   const det = await faceapi
-    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 512, scoreThreshold: 0.3 }))
+    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: currentInputSize, scoreThreshold: 0.3 }))
     .withFaceLandmarks()
     .withFaceDescriptor();
 
-  if (!det){ setStatus('🔍 Scanning for a face…'); drawBox(null,''); return; }
+  if (!det){
+    // Adaptive bump if no face for ~1.5s
+    if (performance.now() - lastSeenTs > 1500 && currentInputSize === 320) {
+      currentInputSize = 416;
+      setTimeout(() => { currentInputSize = 320; }, 1500);
+    }
+    setStatus('🔍 Scanning for a face…');
+    drawBox(null,'');
+    return;
+  }
+
+  lastSeenTs = performance.now();
 
   const best = matcher.findBestMatch(det.descriptor);
   if (best && best.label !== 'unknown'){
@@ -244,7 +324,7 @@ async function scanLoop(){
     const confPct = Math.max(0, Math.min(99, Math.round((1 - best.distance) * 100)));
     drawBox(det, `${meta.name} ${confPct}%`);
     setStatus(`✅ Recognized: ${meta.name} (${confPct}%) — logging in…`);
-    clearInterval(scanTimer);
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
 
     try{
       const body = new URLSearchParams({ student_id: String(meta.id) });
@@ -253,30 +333,47 @@ async function scanLoop(){
       }).then(r=>r.json());
 
       if (res && res.success){
-        // Use an ABSOLUTE URL so the browser never treats "user" as a hostname.
         window.location.replace(SELECT_URL);
       } else {
         setStatus('⚠️ Login failed on server. Retrying…');
-        scanTimer = setInterval(scanLoop, PING_MS);
+        if (!rafId) rafId = requestAnimationFrame(loop);
       }
     } catch(e) {
       console.error(e);
       setStatus('❌ Network/login error.');
-      scanTimer = setInterval(scanLoop, PING_MS);
+      if (!rafId) rafId = requestAnimationFrame(loop);
     }
   } else {
     drawBox(det, 'Unknown'); setStatus('❌ Face not recognized.');
   }
 }
 
+function loop(){
+  rafId = requestAnimationFrame(loop);
+  const now = performance.now();
+  if (now - lastScan < SCAN_MIN_MS) return;
+  lastScan = now;
+  scanLoop();
+}
+
 async function init(){
   try{
-    setStatus('Loading models…'); await waitForFaceApi(); await loadModels();
+    setStatus('Loading models…'); await waitForFaceApi(); await selectBackend(); await loadModels();
     setStatus('Starting camera…'); await startCam();
-    setStatus('Loading face roster…'); await fetchRoster(); if (!roster.length) throw new Error('No reference faces from API.');
+
+    // Warm-up once to compile kernels
+    try {
+      await faceapi.detectSingleFace(document.getElementById('video'),
+        new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.4 })
+      );
+    } catch {}
+
+    setStatus('Loading face roster…'); await fetchRoster();
+    if (!roster.length) throw new Error('No reference faces from API.');
     setStatus('Preparing faces…'); await buildMatcher();
+
     ready = true; setStatus('🔍 Scanning for a face…');
-    scanTimer = setInterval(scanLoop, PING_MS);
+    if (!rafId) rafId = requestAnimationFrame(loop);
   }catch(e){ console.error(e); setStatus('🚫 Setup error: ' + e.message); }
 }
 window.addEventListener('load', init);
