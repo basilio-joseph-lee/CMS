@@ -127,6 +127,25 @@ async function startCam(){
   video.srcObject = stream;
 }
 async function fetchRoster(){
+  // Try fast path: precomputed vectors
+  try {
+    const r = await fetch(ORIGIN + APP_BASE + '/api/list_face_vectors.php', { method:'GET', cache:'no-store' });
+    if (r.ok) {
+      const data = await r.json();
+      if (data && Array.isArray(data.vectors) && data.vectors.length) {
+        roster = data.vectors.map(v => ({
+          student_id: v.student_id,
+          fullname: v.fullname,
+          descriptor: Array.isArray(v.descriptor) ? v.descriptor : []
+        }));
+        return; // success, skip image-based fallback
+      }
+    }
+  } catch (e) {
+    console.warn('Vector API failed, fallback to images…', e);
+  }
+
+  // Fallback (old behavior)
   const res = await fetch(ORIGIN + APP_BASE + '/api/list_faces_all.php', { method:'POST' });
   roster = await res.json();
   if (!Array.isArray(roster)) roster = [];
@@ -156,7 +175,33 @@ async function detectOneWithProfiles(img){
   return null;
 }
 
+function toFloat32(arr){
+  if (!Array.isArray(arr) || arr.length !== 128) return null;
+  try { return new Float32Array(arr); } catch { return null; }
+}
+
+
 async function buildMatcher(){
+  // Fast path: use precomputed 128-float vectors if present
+  const haveVectors = roster.length && roster.every(r => Array.isArray(r.descriptor));
+  if (haveVectors) {
+    const labeled = [];
+    let done = 0, total = roster.length;
+    for (const r of roster){
+      const vec = toFloat32(r.descriptor);
+      if (vec) {
+        const label = String(r.student_id);
+        labeled.push(new faceapi.LabeledFaceDescriptors(label, [vec]));
+        indexByLabel.set(label, { id: r.student_id, name: r.fullname });
+      }
+      done++; setStatus(`Preparing faces… ${done}/${total}`);
+    }
+    if (!labeled.length) throw new Error('No vectors loaded.');
+    matcher = new faceapi.FaceMatcher(labeled, DISTANCE_THRESHOLD);
+    return;
+  }
+
+  // Fallback (old behavior uses images)
   const labeled = [];
   let done = 0, total = roster.length;
   for (const row of roster){
@@ -180,6 +225,7 @@ async function buildMatcher(){
   if (!labeled.length) throw new Error('No reference faces loaded.');
   matcher = new faceapi.FaceMatcher(labeled, DISTANCE_THRESHOLD);
 }
+
 
 async function scanLoop(){
   if (!ready || !matcher) return;
