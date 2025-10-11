@@ -1,7 +1,7 @@
 <?php
 // test_sms.php — Mocean token-based SMS test
 
-$token   = "YOUR_TOKEN_HERE";            // paste the full token you generated
+$token   = "apit-a31jaJaUCd9wE7lfnuzzjjPT3QU5FjED-avNb5";            // paste the full token you generated
 $from    = "MySchoolness";               // use approved sender ID or a numeric long number
 $to      = "639630499218";               // your TNT number in E.164 (63 + number)
 $message = "Hello! ✅ Test SMS from MySchoolness via Mocean (token auth).";
