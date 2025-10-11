@@ -134,7 +134,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   </div>
 
   <!-- Actions -->
-  <div class="wrap grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 md:gap-4 mb-6">
+  <div class="wrap grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3 md:gap-4 mb-6">
     <button class="tile t-yellow" data-action="restroom"  aria-label="Restroom">
       <span class="emoji">🚻</span><div class="label">Restroom</div>
     </button>
