@@ -257,36 +257,34 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
     });
   }
 
-  async function fetchPending(){
-    try{
-      const res = await fetch('../../api/out_time_requests_list.php', {
-        credentials:'include', cache:'no-store'
-      });
-      const j = await res.json();
-      if (!j.ok) { toast(j.message || 'Failed to load','err'); return; }
-      renderPending(j.items || []);
-    }catch(e){ toast('Network error','err'); }
+ async function loadPending() {
+  try {
+    const r = await fetch('/api/out_time_requests_list.php', { credentials: 'include' });
+    const j = await r.json();
+    console.log('pending:', j); // keep for debug
+    renderPending(j.ok ? j.items : []);
+  } catch (e) {
+    console.error(e);
+    renderPending([]);
   }
+}
 
-  async function decideReq(id, decision, btnEl){
-    try{
-      if (btnEl) btnEl.disabled = true;
-      const res = await fetch('../../api/out_time_request_decide.php', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        credentials:'include',
-        body: JSON.stringify({ id: Number(id), decision })
-      });
-      const j = await res.json();
-      if (!j.ok){ toast(j.message || 'Action failed','err'); return; }
-      toast(decision==='approve' ? 'Out Time approved' : 'Request denied');
-      fetchPending();
-    }catch(e){
-      toast('Network error','err');
-    }finally{
-      if (btnEl) btnEl.disabled = false;
-    }
+async function decideReq(id, action) {
+  try {
+    const r = await fetch('/api/out_time_request_decide.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ id, action }) // action: 'approve' | 'deny'
+    });
+    const j = await r.json();
+    if (j.ok) await loadPending();
+    else alert(j.message || 'Failed');
+  } catch (e) {
+    alert('Network error');
   }
+}
+
 
   btnRefreshReq.addEventListener('click', fetchPending);
   fetchPending();
