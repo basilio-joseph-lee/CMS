@@ -233,6 +233,7 @@ try {
           provider_msgid VARCHAR(64) NULL,
           status VARCHAR(32) NULL,
           http_code INT NULL,
+          provider_error VARCHAR(255) NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )");
 
