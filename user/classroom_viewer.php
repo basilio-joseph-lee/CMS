@@ -1,17 +1,20 @@
 <?php
 /**
- * TEACHER — READ-ONLY CLASSROOM VIEW
- * Shows seating + live statuses (like the simulator) with NO controls or saving.
- * Path: teacher/classroom_view.php
+ * STUDENT — READ-ONLY CLASSROOM LIVE VIEW
+ * Mirrors the teacher’s 2D Classroom Simulator (same layout & bubbles), but no controls.
+ * Path: /user/classroom_view.php
  */
 
 session_start();
 
-// This viewer is PUBLIC/READ-ONLY — no login required.
-$teacherName   = $_SESSION['teacher_fullname'] ?? 'Guest Viewer';
-$subject_id     = intval($_SESSION['subject_id'] ?? 0);
-$advisory_id    = intval($_SESSION['advisory_id'] ?? 0);
-$school_year_id = intval($_SESSION['school_year_id'] ?? 0);
+// Students only (must be logged in). We use their session context (advisory/subject/SY).
+if (!isset($_SESSION['student_id'])) { header("Location: ../index.php"); exit; }
+
+$student_id     = (int)$_SESSION['student_id'];
+$fullname       = $_SESSION['fullname'] ?? 'Student';
+$subject_id     = (int)($_SESSION['subject_id'] ?? 0);
+$advisory_id    = (int)($_SESSION['advisory_id'] ?? 0);
+$school_year_id = (int)($_SESSION['school_year_id'] ?? 0);
 $subject_name   = $_SESSION['subject_name'] ?? 'Subject';
 $class_name     = $_SESSION['class_name'] ?? 'Section';
 $year_label     = $_SESSION['year_label'] ?? 'SY';
@@ -27,17 +30,17 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     body { background:#fefae0; font-family:'Comic Sans MS', cursive, sans-serif; }
     .btn { padding:.5rem .75rem; border-radius:.5rem; font-weight:700; }
 
-    /* Stage (parity with classroom_simulator.php) */
+    /* Stage — same visuals as teacher/classroom_simulator.php */
     #stage{
       position: relative;
       min-height: 540px;
       height: 72vh;
-      background: url('../../img/bg-8.png') center center / cover no-repeat;
+      background: url('../img/bg-8.png') center center / cover no-repeat;
       border-radius: 12px;
       overflow: hidden;
       box-shadow: inset 0 0 20px rgba(0,0,0,0.15);
 
-      /* theme variables (same defaults as simulator) */
+      /* theme variables (default; teacher may change via CSS vars in future) */
       --desk-grad-1:#e6cfa7;
       --desk-grad-2:#d2a86a;
       --desk-border:#a16a2a;
@@ -55,14 +58,16 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     .seat{ width:100px; position:absolute; user-select:none; transition:opacity .2s ease; }
     .seat .card{ position:relative; background:transparent; border:none; box-shadow:none; text-align:center; }
 
+    /* Desk */
     .desk-rect{ width:90px; height:40px; background:linear-gradient(180deg,var(--desk-grad-1) 0%,var(--desk-grad-2) 100%); border:2px solid var(--desk-border); border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; }
     .desk-rect::before,.desk-rect::after{ content:""; position:absolute; width:6px; height:28px; background:var(--leg); bottom:-28px; }
     .desk-rect::before{ left:10px; } .desk-rect::after{ right:10px; }
 
+    /* Chair (dimensioned by vars) */
     .chair-back{ width:var(--back-w); height:var(--back-h); background:var(--chair-back); border:2px solid var(--chair-border); border-radius:var(--back-r); margin:0 auto; position:relative; }
     .chair-seat{ width:var(--seat-w); height:var(--seat-h); background:var(--chair-seat); border:2px solid var(--chair-border); border-radius:var(--seat-r); margin:var(--seat-mt) auto 0; position:relative; z-index:0; }
 
-    /* Avatar + light head-tilt animation */
+    /* Avatar + light head tilt */
     .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; transform-style: preserve-3d; }
     .avatar-bias{ width:100%; height:100%; }
     .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; animation: head-tilt var(--headDur, 2.8s) ease-in-out infinite; transform-origin: 50% 76%; backface-visibility: hidden; -webkit-backface-visibility: hidden; will-change: transform; transform: translateZ(0); }
@@ -77,11 +82,11 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     .status-bubble::before{ width:10px; height:10px; left:-14px; top:22px; }
     .status-bubble::after { width:6px; height:6px; left:-22px; top:28px; }
 
-    /* Away behavior: hide avatar only, keep desk/chair and name visible/dimmed */
+    /* When away: hide only avatar; keep furniture + name visible/dimmed */
     .seat.is-away .avatar-img { visibility: hidden; }
     .seat.is-away .name { opacity: 0.6; visibility: visible; color: #111; }
 
-    /* Shell cards */
+    /* Shell */
     .wrap{ max-width:1200px; margin-inline:auto; }
     .card{ background:#fff; border-radius:1rem; box-shadow:0 10px 30px rgba(0,0,0,.08); }
   </style>
@@ -94,11 +99,10 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
         <div class="text-sm text-gray-700 mt-1">
           <?= htmlspecialchars($class_name) ?> • <?= htmlspecialchars($subject_name) ?> • <?= htmlspecialchars($year_label) ?>
         </div>
-        <div class="text-xs text-gray-600 mt-1">Welcome, <b><?= htmlspecialchars($teacherName) ?></b></div>
+        <div class="text-xs text-gray-600 mt-1">Welcome, <b><?= htmlspecialchars($fullname) ?></b></div>
       </div>
       <div class="flex items-center gap-2">
-        <a href="classroom_simulator.php" class="btn bg-yellow-500 text-white hover:brightness-110">↔ Go to Simulator</a>
-        <a href="teachers.php" class="btn bg-gray-100 hover:bg-gray-200 text-gray-800">← Back</a>
+        <a href="dashboard.php" class="btn bg-gray-100 hover:bg-gray-200 text-gray-800">← Back</a>
       </div>
     </div>
 
@@ -112,15 +116,16 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   </div>
 
 <script>
-/* -------- Flexible API base (local /CMS vs live domain) -------- */
+/* -------- API base that works for local (/CMS) and live (/user) -------- */
 const API = <?php
+  // detect scheme even behind proxies
   $https  = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
          || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
   $scheme = $https ? 'https' : 'http';
   $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
   $path   = $_SERVER['PHP_SELF'] ?? '/';
-  // keep /CMS when local, strip /teacher/... to get app root
-  $base   = preg_replace('~(?i)(/CMS)?/teacher/.*$~', '$1', $path);
+  // keep /CMS when local; strip /user/... to get root
+  $base   = preg_replace('~(?i)(/CMS)?/user/.*$~', '$1', $path);
   $base   = rtrim($base, '/');
   echo json_encode("$scheme://$host$base/api");
 ?>;
@@ -129,6 +134,7 @@ const ROOT = API.replace(/\/api$/, '');
 const AVATAR_BASE = ROOT + '/avatar';
 const AVATAR_FALLBACK = AVATAR_BASE + '/default-student.png';
 
+// Normalize stored avatar URLs (any old folder forms)
 function fixAvatar(u){
   if (!u || typeof u !== 'string') return AVATAR_FALLBACK;
   if (u.startsWith('data:')) return u;
@@ -210,6 +216,7 @@ async function loadData(){
   students = S.students || [];
   seats    = normalizeSeating(P.seating);
 
+  // If no seat coords yet, produce a centered grid so chairs appear
   if(seats.length===0){
     const pos=placeGridCentered(5,5,10);
     seats=pos.map((p,i)=>({seat_no:i+1,student_id:null,x:p.x,y:p.y}));
@@ -316,7 +323,7 @@ window.addEventListener('resize', ()=>{
   renderSeats();
 });
 
-/* Init + polling (light) */
+/* Init + light polling */
 loadData();
 setInterval(refreshBehavior, 3000);
 setInterval(async ()=>{
