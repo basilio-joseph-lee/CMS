@@ -82,7 +82,11 @@ while ($p = $parents->fetch_assoc()) {
   <div class="toast"><?= $toast ?></div>
 <?php endif; ?>
 
-<!-- <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 mb-4">➕ Add Student</button> -->
+<a href="admin.php?page=add_student_admin" 
+   class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow">
+   ➕ Add Student
+</a>
+
 
 <table class="min-w-full bg-white shadow rounded">
   <thead class="bg-blue-100 text-gray-700">

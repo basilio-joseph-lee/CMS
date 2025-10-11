@@ -4,21 +4,12 @@
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 require_once dirname(__DIR__, 2) . '/config/db.php';
-
 $conn->set_charset('utf8mb4');
 
-// Helpers (safe if already defined elsewhere)
-if (!function_exists('h')) {
-    function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
-}
-if (!function_exists('postv')) {
-    function postv($k, $d=null){ return $_POST[$k] ?? $d; }
-}
-if (!function_exists('getv')) {
-    function getv($k, $d=null){ return $_GET[$k] ?? $d; }
-}
-
-
+// Helpers
+if (!function_exists('h')) { function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); } }
+if (!function_exists('postv')) { function postv($k, $d=null){ return $_POST[$k] ?? $d; } }
+if (!function_exists('getv')) { function getv($k, $d=null){ return $_GET[$k] ?? $d; } }
 
 /* -------------------- Active School Year -------------------- */
 $sy = $conn->query("SELECT school_year_id, year_label FROM school_years WHERE status='active' LIMIT 1");
@@ -29,12 +20,7 @@ $ACTIVE_SY_LABEL = $ACTIVE_SY['year_label'];
 
 /* -------------------- Sections (active SY) -------------------- */
 $sections = [];
-$sec = $conn->prepare("
-  SELECT advisory_id, class_name
-  FROM advisory_classes
-  WHERE school_year_id=?
-  ORDER BY class_name ASC
-");
+$sec = $conn->prepare("SELECT advisory_id, class_name FROM advisory_classes WHERE school_year_id=? ORDER BY class_name ASC");
 $sec->bind_param("i", $ACTIVE_SY_ID);
 $sec->execute();
 $r = $sec->get_result();
@@ -44,12 +30,7 @@ $sec->close();
 /* -------------------- Subjects + group by name (dedupe) -------------------- */
 $subjectsByAdvisory = []; // advisory_id => [{subject_id, subject_name}]
 $subjectsGroup = [];      // subject_name => [subject_id,...]
-$sub = $conn->prepare("
-  SELECT subject_id, advisory_id, subject_name
-  FROM subjects
-  WHERE school_year_id=?
-  ORDER BY subject_name ASC
-");
+$sub = $conn->prepare("SELECT subject_id, advisory_id, subject_name FROM subjects WHERE school_year_id=? ORDER BY subject_name ASC");
 $sub->bind_param("i", $ACTIVE_SY_ID);
 $sub->execute();
 $rs = $sub->get_result();
@@ -68,7 +49,6 @@ $sub->close();
 
 /* -------------------- Redirect helper (always back to router tab) -------------------- */
 function redirect_with_toast($type, $msg = '') {
-  // preserve filters if present
   $qs = $_GET;
   $qs['page'] = 'announcement';
   $qs['success'] = $type;
@@ -77,7 +57,6 @@ function redirect_with_toast($type, $msg = '') {
   echo "<script>location.href=" . json_encode($url) . ";</script>";
   exit;
 }
-// alias for backwards compatibility
 function toast_redirect($type, $msg = '') { redirect_with_toast($type, $msg); }
 
 /* -------------------- CREATE (multi-section; admin post = teacher_id NULL) -------------------- */
@@ -92,15 +71,8 @@ if (isset($_POST['create_announcement'])) {
     toast_redirect('error','Missing title/message/section(s).');
   }
 
-  // Prepare two statements: with subject, and without subject (NULL)
-  $stmtWith = $conn->prepare("
-    INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until)
-    VALUES (NULL, ?, ?, ?, ?, ?)
-  ");
-  $stmtWithout = $conn->prepare("
-    INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until)
-    VALUES (NULL, NULL, ?, ?, ?, ?)
-  ");
+  $stmtWith = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until) VALUES (NULL, ?, ?, ?, ?, ?)");
+  $stmtWithout = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until) VALUES (NULL, NULL, ?, ?, ?, ?)");
 
   foreach ($class_ids as $cid) {
     $cid = (int)$cid;
@@ -158,18 +130,10 @@ if (isset($_POST['update_announcement'], $_POST['id'])) {
   }
 
   if ($subject_id === null) {
-    $u = $conn->prepare("
-      UPDATE announcements
-      SET title=?, message=?, subject_id=NULL, class_id=?, visible_until=?
-      WHERE id=?
-    ");
+    $u = $conn->prepare("UPDATE announcements SET title=?, message=?, subject_id=NULL, class_id=?, visible_until=? WHERE id=?");
     $u->bind_param("ssisi", $title, $message, $class_id, $visible_until, $id);
   } else {
-    $u = $conn->prepare("
-      UPDATE announcements
-      SET title=?, message=?, subject_id=?, class_id=?, visible_until=?
-      WHERE id=?
-    ");
+    $u = $conn->prepare("UPDATE announcements SET title=?, message=?, subject_id=?, class_id=?, visible_until=? WHERE id=?");
     $u->bind_param("ssiisi", $title, $message, $subject_id, $class_id, $visible_until, $id);
   }
   $u->execute(); $u->close();
@@ -236,6 +200,44 @@ if (isset($_GET['success'])) {
   @keyframes fadeIn{from{opacity:.0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
   .truncate-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .icon-btn { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:8px; }
+
+  /* --- Responsive Table Cards on small screens --- */
+/* Responsive layout fix: keeps table intact for medium screens */
+@media (max-width: 1024px) {
+  .table-auto {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  table thead { display: none; }
+  table, table tbody, table tr, table td { display: block; width: 100%; }
+  table tr {
+    margin-bottom: 1rem;
+    background: #fff;
+    border-radius: 0.5rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  }
+  table td {
+    text-align: right;
+    padding: 0.75rem 1rem;
+    position: relative;
+    word-wrap: break-word;
+    border: none;
+  }
+  table td::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 1rem;
+    font-weight: 600;
+    text-align: left;
+    color: #4b5563;
+  }
+}
+
+  
 </style>
 </head>
 <body class="bg-gray-50">
@@ -284,19 +286,21 @@ if (isset($_GET['success'])) {
     <script>setTimeout(()=>document.querySelector('.fixed.top-4')?.remove(), 2300);</script>
   <?php endif; ?>
 
-  <!-- Table -->
-  <div class="bg-white rounded-xl shadow overflow-hidden">
-    <table class="min-w-full text-sm">
+  <!-- Table (now responsive) -->
+<div class="bg-white rounded-xl shadow overflow-x-auto">
+  <div class="overflow-y-auto" style="max-height: 400px;"> <!-- ✅ you can adjust this height -->
+    <table class="min-w-full text-sm table-auto">
+
       <thead class="bg-gray-100 text-gray-700">
         <tr>
-          <th class="text-left px-4 py-3 w-48">Title</th>
+          <th class="text-left px-4 py-3">Title</th>
           <th class="text-left px-4 py-3">Message</th>
-          <th class="text-left px-4 py-3 w-40">Section</th>
-          <th class="text-left px-4 py-3 w-32">Subject</th>
-          <th class="text-left px-4 py-3 w-36">Posted By</th>
-          <th class="text-left px-4 py-3 w-40">Date</th>
-          <th class="text-left px-4 py-3 w-32">Visible Until</th>
-          <th class="text-center px-3 py-3 w-24">Actions</th>
+          <th class="text-left px-4 py-3">Section</th>
+          <th class="text-left px-4 py-3">Subject</th>
+          <th class="text-left px-4 py-3">Posted By</th>
+          <th class="text-left px-4 py-3">Date</th>
+          <th class="text-left px-4 py-3">Visible Until</th>
+          <th class="text-center px-3 py-3">Actions</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-gray-100">
@@ -304,34 +308,34 @@ if (isset($_GET['success'])) {
           <tr><td colspan="8" class="px-4 py-8 text-center text-gray-500">No announcements found.</td></tr>
         <?php else: foreach($rows as $row): ?>
           <tr class="hover:bg-gray-50">
-            <td class="px-4 py-3 font-medium text-gray-900"><?= h($row['title']) ?></td>
-            <td class="px-4 py-3 text-gray-700">
+            <td data-label="Title" class="px-4 py-3 font-medium text-gray-900"><?= h($row['title']) ?></td>
+            <td data-label="Message" class="px-4 py-3 text-gray-700 break-words max-w-[200px]">
               <div class="truncate-2"><?= nl2br(h($row['message'])) ?></div>
             </td>
-            <td class="px-4 py-3">
+            <td data-label="Section" class="px-4 py-3">
               <span class="inline-block bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">
                 <?= h($row['class_name'] ?? ('#'.$row['class_id'])) ?>
               </span>
             </td>
-            <td class="px-4 py-3">
+            <td data-label="Subject" class="px-4 py-3">
               <span class="inline-block bg-indigo-50 text-indigo-700 text-xs px-2 py-1 rounded">
                 <?= h($row['subject_name'] ?? '—') ?>
               </span>
             </td>
-            <td class="px-4 py-3">
+            <td data-label="Posted By" class="px-4 py-3">
               <?php if (empty($row['teacher_name'])): ?>
                 <span class="inline-block bg-emerald-50 text-emerald-700 text-xs px-2 py-1 rounded">Admin</span>
               <?php else: ?>
                 <span class="inline-block bg-amber-50 text-amber-700 text-xs px-2 py-1 rounded"><?= h($row['teacher_name']) ?></span>
               <?php endif; ?>
             </td>
-            <td class="px-4 py-3 text-gray-600 whitespace-nowrap">
+            <td data-label="Date" class="px-4 py-3 text-gray-600 whitespace-nowrap">
               <?= $row['date_posted'] ? date('M d, Y h:i A', strtotime($row['date_posted'])) : '—' ?>
             </td>
-            <td class="px-4 py-3 text-gray-600 whitespace-nowrap">
+            <td data-label="Visible Until" class="px-4 py-3 text-gray-600 whitespace-nowrap">
               <?= $row['visible_until'] ? date('M d, Y', strtotime($row['visible_until'])) : '—' ?>
             </td>
-            <td class="px-3 py-2 text-center">
+            <td data-label="Actions" class="px-3 py-2 text-center">
               <!-- Edit -->
               <button class="icon-btn mr-2 hover:bg-yellow-100" title="Edit"
                 onclick='openEdit(<?= json_encode([
@@ -364,6 +368,7 @@ if (isset($_GET['success'])) {
         <?php endforeach; endif; ?>
       </tbody>
     </table>
+    </div>
   </div>
 </div>
 
@@ -479,7 +484,6 @@ function openEdit(data){
   const m=document.getElementById('editModal'); m.classList.remove('hidden'); m.classList.add('flex');
 }
 function closeEdit(){ const m=document.getElementById('editModal'); m.classList.add('hidden'); m.classList.remove('flex'); }
-
 document.addEventListener('click', (e) => {
   if (e.target.id === 'createModal') closeCreate();
   if (e.target.id === 'editModal') closeEdit();

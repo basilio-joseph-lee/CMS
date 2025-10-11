@@ -66,6 +66,7 @@ $populatedSection = $conn->query("
             <a href="admin.php?page=parents" class="block py-2 px-3 <?= $page === 'parents' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">👪 Parents</a>
             <a href="admin.php?page=enroll_student" class="block py-2 px-3 <?= $page === 'enroll_student' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">📝 Assign Students</a>
             <a href="admin.php?page=grades" class="block py-2 px-3 <?= $page === 'grades' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">📊 Grades</a>
+            <a href="admin.php?page=attendance" class="block py-2 px-3 <?= $page === 'attendance' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">🗓 Attendance</a>
             <a href="admin.php?page=announcement" class="block py-2 px-3 <?= $page === 'announcement' ? 'bg-blue-700' : 'hover:bg-blue-800' ?> rounded">📢 Announcement</a>
             <hr class="my-4 border-gray-600">
 
@@ -169,9 +170,20 @@ $populatedSection = $conn->query("
 
     <?php elseif ($page === 'announcement'): ?>
     <h2 class="text-2xl font-bold mb-4">📢 Announcements</h2>
+    
     <?php include 'admin_views/announcement.php'; ?>
 
-    <?php elseif ($page === 'set_schedule'): ?>
+<?php elseif ($page === 'attendance'): ?>
+<h2 class="text-2xl font-bold mb-4">🗓 Attendance Management</h2>
+<?php include 'admin_views/attendance.php'; ?>
+
+<?php elseif ($page === 'add_student_admin'): ?>
+<h2 class="text-2xl font-bold mb-4">🧑‍🎓 Add Student</h2>
+<?php include 'admin_views/add_student_admin.php'; ?>
+
+<?php elseif ($page === 'set_schedule'): ?>
+
+
   <h2 class="text-2xl font-bold mb-4">⏰ Set Schedule &nbsp;<span class="text-gray-500 text-base">(SY: <?= htmlspecialchars($ACTIVE_SY_LABEL) ?>)</span></h2>
   <?php include 'admin_views/set_schedule.php'; ?>
 
