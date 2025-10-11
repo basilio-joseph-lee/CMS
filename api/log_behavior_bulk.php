@@ -1,5 +1,5 @@
 <?php
-include __DIR__ . '/../config/db.php';      // dapat may $conn at $MOCEAN_TOKEN dito
+include __DIR__ . '/../config/db.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
@@ -11,16 +11,22 @@ function json_fail($msg, $code = 400){
   exit;
 }
 
+/* === INSERT YOUR MOCEAN TOKEN HERE === */
+$MOCEAN_TOKEN  = 'apit-a31jaJaUCd9wE7lfnuzzjjPT3QU5FjED-avNb5'; // <-- replace with your actual token (full string)
+$MOCEAN_SENDER = 'MySchoolness';
+ // numeric sender (sa PH, mas sure pumasok kaysa alphanumeric)
+
+/* === Read and parse request === */
 $raw = file_get_contents("php://input");
 if ($raw === false) json_fail("No input");
 $payload = json_decode($raw, true);
 if (!is_array($payload)) json_fail("Invalid JSON body");
 
-$action = $payload['action_type'] ?? ($payload['action'] ?? null);
+$action      = $payload['action_type'] ?? ($payload['action'] ?? null);
 $student_ids = $payload['student_ids'] ?? null;
-$send_sms = !empty($payload['send_sms']);   // true => talagang magpadala; else preview lang
+$send_sms    = !empty($payload['send_sms']); // true => talagang magpadala; else preview lang
 
-/* Normalize / map */
+/* === Normalize / map === */
 if ($action === 'out') $action = 'out_time';
 
 $ALLOWED = [
@@ -34,8 +40,8 @@ if (!is_array($student_ids) || count($student_ids) === 0) {
   json_fail("student_ids must be a non-empty array");
 }
 
-/* --- Helpers --- */
-// E.164 normalizer for PH numbers; returns "63XXXXXXXXXX" or null if invalid
+/* === Helpers === */
+// normalize PH numbers into E.164 (63XXXXXXXXXX)
 function normalizePH($msisdn){
   if ($msisdn === null) return null;
   $s = trim((string)$msisdn);
@@ -58,15 +64,14 @@ function normalizePH($msisdn){
   return null;
 }
 
-function mocean_send_sms(string $token, string $to, string $text): array {
+// send SMS via Mocean API
+function mocean_send_sms(string $token, string $from, string $to, string $text): array {
   $url  = "https://rest.moceanapi.com/rest/2/sms";
   $data = [
-    'mocean-from'        => 'MySchoolness', // alphanumeric sender; kung hindi dumarating, gumamit ng numeric long number
+    'mocean-from'        => $from,
     'mocean-to'          => $to,
     'mocean-text'        => $text,
-    'mocean-resp-format' => 'JSON',
-    // 'mocean-dlr-url'   => 'https://myschoolness.site/dlr.php',
-    // 'mocean-dlr-mask'  => 1,
+    'mocean-resp-format' => 'JSON'
   ];
   $ch = curl_init($url);
   curl_setopt_array($ch, [
@@ -89,7 +94,7 @@ function mocean_send_sms(string $token, string $to, string $text): array {
   return ['ok'=>true,'http'=>$http,'body'=>$json ?? $res];
 }
 
-/* --- Main --- */
+/* === Main logic === */
 try {
   $conn->begin_transaction();
 
@@ -134,13 +139,12 @@ try {
         "parent_name"  => $row['parent_name'] ?? null,
         "mobile_raw"   => $raw,
         "mobile_e164"  => $norm,
-        "can_notify"   => ($row['parent_id'] !== null) && ($norm !== null) // <-- may parent at valid # lang
+        "can_notify"   => ($row['parent_id'] !== null) && ($norm !== null)
       ];
     }
     $stmt2->close();
   }
 
-  // 3) Kung send_sms=true: magpadala lang sa can_notify==true
   $result = [
     "ok" => true,
     "inserted" => $inserted,
@@ -148,30 +152,22 @@ try {
     "recipients_preview" => $recipients
   ];
 
+  // 3) Kung send_sms=true: magpadala lang sa may parent + valid #
   if ($action === 'out_time' && $send_sms) {
-    // siguraduhing meron tayong token
-    if (!isset($MOCEAN_TOKEN) || !$MOCEAN_TOKEN) {
-      $conn->commit();
-      $result["ok"] = false;
-      $result["message"] = "MOCEAN_TOKEN is missing in config.";
-      echo json_encode($result, JSON_UNESCAPED_UNICODE);
-      exit;
-    }
-
     $template = "Hi, this is MySchoolness. Your child {student} has checked OUT from class.";
     $sent = []; $failed = [];
 
     foreach ($recipients as $r) {
-      if (!$r['can_notify']) continue; // <-- skip walang parent / invalid #
+      if (!$r['can_notify']) continue;
       $text = str_replace('{student}', $r['student_name'], $template);
-      $resp = mocean_send_sms($MOCEAN_TOKEN, $r['mobile_e164'], $text);
+      $resp = mocean_send_sms($GLOBALS['MOCEAN_TOKEN'], $GLOBALS['MOCEAN_SENDER'], $r['mobile_e164'], $text);
 
       $msgid  = $resp['body']['messages'][0]['message-id'] ?? null;
       $status = $resp['body']['messages'][0]['status'] ?? null;
 
-      // optional: log to table sms_logs kung meron
+      // optional: log to table
       if (isset($conn)) {
-        $stmt3 = $conn->prepare("CREATE TABLE IF NOT EXISTS sms_logs (
+        $stmt4 = $conn->prepare("CREATE TABLE IF NOT EXISTS sms_logs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             student_id INT NULL,
             parent_id INT NULL,
@@ -183,16 +179,16 @@ try {
             http_code INT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )");
-        if ($stmt3) { $stmt3->execute(); $stmt3->close(); }
+        if ($stmt4) { $stmt4->execute(); $stmt4->close(); }
 
-        $stmt4 = $conn->prepare("INSERT INTO sms_logs (student_id,parent_id,to_e164,message,provider,provider_msgid,status,http_code)
+        $stmt5 = $conn->prepare("INSERT INTO sms_logs (student_id,parent_id,to_e164,message,provider,provider_msgid,status,http_code)
                                  VALUES (?,?,?,?,?,?,?,?)");
-        if ($stmt4) {
+        if ($stmt5) {
           $prov = 'mocean';
           $http = $resp['http'] ?? null;
           $sid = $r['student_id']; $pid = $r['parent_id'];
-          $stmt4->bind_param("iissssii", $sid, $pid, $r['mobile_e164'], $text, $prov, $msgid, $status, $http);
-          $stmt4->execute(); $stmt4->close();
+          $stmt5->bind_param("iissssii", $sid, $pid, $r['mobile_e164'], $text, $prov, $msgid, $status, $http);
+          $stmt5->execute(); $stmt5->close();
         }
       }
 
@@ -219,3 +215,4 @@ try {
   if ($conn && $conn->errno) { @ $conn->rollback(); }
   json_fail("DB error: ".$e->getMessage(), 500);
 }
+?>
