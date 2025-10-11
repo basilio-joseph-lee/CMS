@@ -70,13 +70,15 @@ try {
     if (!in_array($t, $allowed, true)) {
         throw new Exception('Forbidden action type: '.$t);
     }
+    $nowPH = (new DateTime('now', new DateTimeZone('Asia/Manila')))->format('Y-m-d H:i:s');
 
     // --- insert ---
-    $stmt = $conn->prepare("INSERT INTO behavior_logs (student_id, action_type, timestamp) VALUES (?, ?, NOW())");
+  $stmt = $conn->prepare("INSERT INTO behavior_logs (student_id, action_type, timestamp) VALUES (?, ?, ?)");
     if (!$stmt) {
         throw new Exception('Prepare failed: '.$conn->error);
     }
-    $stmt->bind_param('is', $student_id, $t);
+   $stmt->bind_param('iss', $student_id, $t, $nowPH);
+
     if (!$stmt->execute()) {
         throw new Exception('Execute failed: '.$stmt->error);
     }
