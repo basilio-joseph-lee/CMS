@@ -259,9 +259,9 @@ if (isset($_GET['success'])) {
 }
 $sent  = isset($_GET['sms_sent'])   ? (int)$_GET['sms_sent']   : null;
 $fail  = isset($_GET['sms_failed']) ? (int)$_GET['sms_failed'] : null;
-if ($sent !== null || $fail !== null) {
-  $smsBanner = "SMS sent to ".(int)$sent." parent(s), failed: ".(int)$fail;
-}
+// if ($sent !== null || $fail !== null) {
+//   $smsBanner = "SMS sent to ".(int)$sent." parent(s), failed: ".(int)$fail;
+// }
 ?>
 <!DOCTYPE html>
 <html lang="en">
