@@ -2,42 +2,125 @@
 session_start();
 include '../../config/teacher_guard.php';
 include '../../config/db.php';
+require_once __DIR__ . '/../../config/sms.php'; // must expose send_sms($to, $text)
 
-$teacher_id     = $_SESSION['teacher_id'];
-$subject_id     = $_SESSION['subject_id'];
-$advisory_id    = $_SESSION['advisory_id'];
-$school_year_id = $_SESSION['school_year_id'];
+// config/db.php (o hiwalay na config.php)
 
-$subject_name = $_SESSION['subject_name'];
-$class_name   = $_SESSION['class_name'];
-$year_label   = $_SESSION['year_label'];
+/* ---- Session context ---- */
+$teacher_id     = (int)($_SESSION['teacher_id'] ?? 0);
+$subject_id     = (int)($_SESSION['subject_id'] ?? 0);
+$advisory_id    = (int)($_SESSION['advisory_id'] ?? 0);
+$school_year_id = (int)($_SESSION['school_year_id'] ?? 0);
+
+$subject_name = $_SESSION['subject_name'] ?? '';
+$class_name   = $_SESSION['class_name']   ?? '';
+$year_label   = $_SESSION['year_label']   ?? '';
 $teacherName  = $_SESSION['teacher_fullname'] ?? 'Teacher';
 
-if ($conn->connect_error) {
-  die("Connection failed: " . $conn->connect_error);
-}
-
+if ($conn->connect_error) { die("Connection failed: ".$conn->connect_error); }
 $conn->set_charset('utf8mb4');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-// --- Create ---
-if (isset($_POST['add'])) {
-  $title         = $_POST['title'];
-  $message       = $_POST['message'];
-  $subject_id    = (int)$_POST['subject_id'];
-  $class_id      = (int)$_POST['class_id'];
-  $audience      = $_POST['audience'] ?? 'STUDENT';
-  $visible_until = $_POST['visible_until'] ?: NULL;
+/* ---- Helpers ---- */
+function normalizePH(?string $msisdn): ?string {
+  if ($msisdn === null) return null;
+  $s = trim($msisdn);
+  if ($s === '') return null;
+  $hasPlus = str_starts_with($s, '+');
+  $digits  = preg_replace('/\D+/', '', $s);
 
-  $stmt = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, audience, visible_until) VALUES (?, ?, ?, ?, ?, ?, ?)");
+  // +63XXXXXXXXXX or 63XXXXXXXXXX (12 digits)
+  if ((($hasPlus && str_starts_with($s,'+63')) || str_starts_with($digits,'63')) && strlen($digits) === 12) {
+    return '63' . substr($digits, 2);
+  }
+  // 09XXXXXXXXX -> 63XXXXXXXXXX
+  if (strlen($digits) === 11 && str_starts_with($digits,'0')) {
+    return '63' . substr($digits, 1);
+  }
+  // 9XXXXXXXXX -> 63XXXXXXXXXX
+  if (strlen($digits) === 10 && str_starts_with($digits,'9')) {
+    return '63' . $digits;
+  }
+  return null;
+}
+
+/** Get unique, valid parent numbers for the chosen class/subject/SY. */
+function fetch_parent_mobiles(mysqli $conn, int $advisoryId, int $subjectId, int $schoolYearId): array {
+  $sql = "SELECT DISTINCT p.mobile_number
+          FROM student_enrollments e
+          JOIN students s ON s.student_id = e.student_id
+          JOIN parents  p ON p.parent_id = s.parent_id
+          WHERE e.advisory_id = ?
+            AND e.subject_id = ?
+            AND e.school_year_id = ?
+            AND p.mobile_number IS NOT NULL
+            AND p.mobile_number <> ''";
+  $q = $conn->prepare($sql);
+  $q->bind_param('iii', $advisoryId, $subjectId, $schoolYearId);
+  $q->execute();
+  $r = $q->get_result();
+
+  $uniq = [];
+  while ($row = $r->fetch_assoc()) {
+    $norm = normalizePH($row['mobile_number']);
+    if ($norm) { $uniq[$norm] = true; }
+  }
+  $q->close();
+  return array_keys($uniq);
+}
+
+/* ===================== CREATE ===================== */
+if (isset($_POST['add'])) {
+  $title         = trim($_POST['title'] ?? '');
+  $message       = trim($_POST['message'] ?? '');
+  $subject_id    = (int)($_POST['subject_id'] ?? 0);
+  $class_id      = (int)($_POST['class_id'] ?? 0);
+  $audience      = $_POST['audience'] ?? 'STUDENT';  // STUDENT | PARENT | BOTH
+  $visible_until = ($_POST['visible_until'] ?? '') ?: null;
+
+  // 1) Save announcement
+  $stmt = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, audience, visible_until)
+                          VALUES (?, ?, ?, ?, ?, ?, ?)");
   $stmt->bind_param("iiissss", $teacher_id, $subject_id, $class_id, $title, $message, $audience, $visible_until);
   $stmt->execute();
   $stmt->close();
+
+  // 2) Determine recipients (parents only for PARENT or BOTH)
+  $mobiles = [];
+  if ($audience === 'PARENT' || $audience === 'BOTH') {
+    $mobiles = fetch_parent_mobiles($conn, $class_id, $subject_id, $school_year_id);
+  }
+
+  // 3) Optional preview
+  if (($audience === 'PARENT' || $audience === 'BOTH') && (isset($_GET['sms_preview']) || isset($_POST['sms_preview']))) {
+    $_SESSION['sms_preview_list']  = $mobiles;
+    $_SESSION['sms_preview_title'] = $title;
+    header("Location: announcement.php?success=added&sms_preview=1&count=" . count($mobiles));
+    exit;
+  }
+
+  // 4) Send SMS (best-effort)
+  if (($audience === 'PARENT' || $audience === 'BOTH') && !empty($mobiles)) {
+    // Keep the text concise for SMS; you can adjust limits
+    $msgTitle = mb_substr($title, 0, 70);
+    $msgBody  = mb_substr($message, 0, 120);
+    $smsText  = "From {$teacherName} ({$class_name}): {$msgTitle}" . ($msgBody ? " — {$msgBody}" : "");
+
+    $sent=0; $fail=0;
+    foreach ($mobiles as $msisdn) {
+      try { if (send_sms($msisdn, $smsText) === true) $sent++; else $fail++; }
+      catch(Throwable $e){ $fail++; }
+    }
+    header("Location: announcement.php?success=added&sms_sent={$sent}&sms_failed={$fail}");
+    exit;
+  }
+
+  // 5) No SMS case
   header("Location: announcement.php?success=added");
   exit;
 }
 
-// --- Delete ---
+/* ===================== DELETE ===================== */
 if (isset($_GET['delete'])) {
   $id = (int)$_GET['delete'];
   $conn->query("DELETE FROM announcements WHERE id = $id");
@@ -45,7 +128,7 @@ if (isset($_GET['delete'])) {
   exit;
 }
 
-// --- Edit Fetch ---
+/* ===================== EDIT FETCH ===================== */
 $edit_data = null;
 if (isset($_GET['edit'])) {
   $id = (int)$_GET['edit'];
@@ -53,17 +136,19 @@ if (isset($_GET['edit'])) {
   $edit_data = $result->fetch_assoc();
 }
 
-// --- Update ---
+/* ===================== UPDATE ===================== */
 if (isset($_POST['update'])) {
   $id            = (int)$_POST['id'];
-  $title         = $_POST['title'];
-  $message       = $_POST['message'];
-  $subject_id    = (int)$_POST['subject_id'];
-  $class_id      = (int)$_POST['class_id'];
+  $title         = trim($_POST['title'] ?? '');
+  $message       = trim($_POST['message'] ?? '');
+  $subject_id    = (int)($_POST['subject_id'] ?? 0);
+  $class_id      = (int)($_POST['class_id'] ?? 0);
   $audience      = $_POST['audience'] ?? 'STUDENT';
-  $visible_until = $_POST['visible_until'] ?: NULL;
+  $visible_until = ($_POST['visible_until'] ?? '') ?: null;
 
-  $stmt = $conn->prepare("UPDATE announcements SET title=?, message=?, subject_id=?, class_id=?, audience=?, visible_until=? WHERE id=?");
+  $stmt = $conn->prepare("UPDATE announcements
+                          SET title=?, message=?, subject_id=?, class_id=?, audience=?, visible_until=?
+                          WHERE id=?");
   $stmt->bind_param("ssisssi", $title, $message, $subject_id, $class_id, $audience, $visible_until, $id);
   $stmt->execute();
   $stmt->close();
@@ -71,11 +156,11 @@ if (isset($_POST['update'])) {
   exit;
 }
 
-// Dropdown sources (limit to the teacher’s)
+/* ---- Dropdown sources ---- */
 $subjects = $conn->query("SELECT subject_id, subject_name FROM subjects WHERE teacher_id = $teacher_id");
 $classes  = $conn->query("SELECT advisory_id, class_name FROM advisory_classes WHERE teacher_id = $teacher_id");
 
-// List with joined names + audience
+/* ---- List ---- */
 $res = $conn->query("
   SELECT a.*, s.subject_name, c.class_name
   FROM announcements a
@@ -92,11 +177,7 @@ $res = $conn->query("
   <title>📣 Announcements</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body {
-      background-image: url('../../img/role.png');
-      background-size: cover;
-      font-family: 'Comic Sans MS', cursive, sans-serif;
-    }
+    body{background-image:url('../../img/role.png');background-size:cover;font-family:'Comic Sans MS',cursive,sans-serif}
   </style>
 </head>
 <body class="p-6">
@@ -104,19 +185,37 @@ $res = $conn->query("
   <div class="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-xl shadow-xl z-50">
     ✅ Announcement <?= htmlspecialchars($_GET['success']) ?> successfully!
   </div>
+  <script>setTimeout(()=>document.querySelector('.fixed.top-4.right-4')?.remove(),3000)</script>
+<?php endif; ?>
+
+<?php if (isset($_GET['sms_preview']) && !empty($_SESSION['sms_preview_list'])): ?>
+  <div class="fixed top-20 right-4 bg-blue-500 text-white px-6 py-3 rounded-xl shadow-xl z-50">
+    🔍 SMS PREVIEW: <?= (int)($_GET['count'] ?? count($_SESSION['sms_preview_list'])) ?> parent number(s) fetched. Check console for the list.
+  </div>
   <script>
-    setTimeout(() => document.querySelector('.fixed.top-4.right-4')?.remove(), 3000);
+    console.group('SMS Preview — Parent Mobiles');
+    <?php foreach ($_SESSION['sms_preview_list'] as $mobile): ?>
+      console.log('<?= addslashes($mobile) ?>');
+    <?php endforeach; unset($_SESSION['sms_preview_list']); ?>
+    console.groupEnd();
   </script>
+<?php endif; ?>
+
+<?php if (isset($_GET['sms_sent'])): ?>
+  <div class="fixed top-20 right-4 bg-green-600 text-white px-6 py-3 rounded-xl shadow-xl z-50">
+    📤 SMS sent to <?= (int)$_GET['sms_sent'] ?> parent(s)<?= isset($_GET['sms_failed']) ? ", failed: ".(int)$_GET['sms_failed'] : "" ?>.
+  </div>
 <?php endif; ?>
 
 <div class="max-w-6xl mx-auto bg-[#fffbea] p-10 rounded-3xl shadow-2xl ring-4 ring-yellow-300">
   <div class="flex justify-between items-center mb-6">
     <div>
       <h1 class="text-4xl font-bold text-[#bc6c25]">📣 Post Announcements</h1>
-      <p class="text-lg font-semibold text-gray-800 mt-2">Subject:
-        <span class="text-green-700"><?= htmlspecialchars($subject_name) ?></span> —
-        <span class="text-blue-700"><?= htmlspecialchars($class_name) ?></span> | SY:
-        <span class="text-red-700"><?= htmlspecialchars($year_label) ?></span></p>
+      <p class="text-lg font-semibold text-gray-800 mt-2">
+        Subject: <span class="text-green-700"><?= htmlspecialchars($subject_name) ?></span> —
+        <span class="text-blue-700"><?= htmlspecialchars($class_name) ?></span> |
+        SY: <span class="text-red-700"><?= htmlspecialchars($year_label) ?></span>
+      </p>
     </div>
     <div class="space-x-4">
       <button onclick="openAddModal()" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2 rounded-xl shadow">+ Add</button>
@@ -203,6 +302,9 @@ $res = $conn->query("
         <option value="PARENT">Parents</option>
         <option value="BOTH">Both (Students & Parents)</option>
       </select>
+      <p class="text-xs text-gray-600 mt-1">
+        When set to <strong>Parents</strong> or <strong>Both</strong>, an SMS will be sent to all parents with valid numbers in this section.
+      </p>
     </div>
 
     <div>
@@ -217,41 +319,32 @@ $res = $conn->query("
 </div>
 
 <script>
-function openAddModal() {
-  document.getElementById('modalTitle').innerText = '📢 New Announcement';
-  document.getElementById('submitBtn').name = 'add';
-  document.getElementById('announcementId').value = '';
-  document.getElementById('title').value = '';
-  document.getElementById('message').value = '';
-  document.getElementById('subject_id').selectedIndex = 0;
-  document.getElementById('class_id').selectedIndex = 0;
-  document.getElementById('audience').value = 'STUDENT';
-  document.getElementById('visible_until').value = '';
+function openAddModal(){
+  document.getElementById('modalTitle').innerText='📢 New Announcement';
+  document.getElementById('submitBtn').name='add';
+  document.getElementById('announcementId').value='';
+  document.getElementById('title').value='';
+  document.getElementById('message').value='';
+  document.getElementById('subject_id').selectedIndex=0;
+  document.getElementById('class_id').selectedIndex=0;
+  document.getElementById('audience').value='STUDENT';
+  document.getElementById('visible_until').value='';
   document.getElementById('modal').classList.remove('hidden');
 }
-
-function openEditModal(data) {
-  document.getElementById('modalTitle').innerText = '✏️ Edit Announcement';
-  document.getElementById('submitBtn').name = 'update';
-  document.getElementById('announcementId').value = data.id;
-  document.getElementById('title').value = data.title;
-  document.getElementById('message').value = data.message;
-  document.getElementById('subject_id').value = data.subject_id;
-  document.getElementById('class_id').value = data.class_id;
-  document.getElementById('audience').value = (data.audience || 'STUDENT');
-  document.getElementById('visible_until').value = (data.visible_until || '');
+function openEditModal(data){
+  document.getElementById('modalTitle').innerText='✏️ Edit Announcement';
+  document.getElementById('submitBtn').name='update';
+  document.getElementById('announcementId').value=data.id;
+  document.getElementById('title').value=data.title;
+  document.getElementById('message').value=data.message;
+  document.getElementById('subject_id').value=data.subject_id;
+  document.getElementById('class_id').value=data.class_id;
+  document.getElementById('audience').value=(data.audience||'STUDENT');
+  document.getElementById('visible_until').value=(data.visible_until||'');
   document.getElementById('modal').classList.remove('hidden');
 }
-
-function closeModal() {
-  document.getElementById('modal').classList.add('hidden');
-}
-
-function confirmDelete(id) {
-  if (confirm('Are you sure you want to delete this announcement?')) {
-    window.location.href = '?delete=' + id;
-  }
-}
+function closeModal(){ document.getElementById('modal').classList.add('hidden'); }
+function confirmDelete(id){ if(confirm('Delete this announcement?')) location.href='?delete='+id; }
 </script>
 </body>
 </html>
