@@ -206,11 +206,11 @@ $res = $conn->query("
   </script>
 <?php endif; ?>
 
-<?php if (isset($_GET['sms_sent'])): ?>
+<!-- <?php if (isset($_GET['sms_sent'])): ?>
   <div class="fixed top-20 right-4 bg-green-600 text-white px-6 py-3 rounded-xl shadow-xl z-50">
     📤 SMS sent to <?= (int)$_GET['sms_sent'] ?> parent(s)<?= isset($_GET['sms_failed']) ? ", failed: ".(int)$_GET['sms_failed'] : "" ?>.
   </div>
-<?php endif; ?>
+<?php endif; ?> -->
 
 <div class="max-w-6xl mx-auto bg-[#fffbea] p-10 rounded-3xl shadow-2xl ring-4 ring-yellow-300">
   <div class="flex justify-between items-center mb-6">
