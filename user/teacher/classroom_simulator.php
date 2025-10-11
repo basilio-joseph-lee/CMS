@@ -435,11 +435,21 @@ function fixAvatar(u) {
         const action_type = (kind==='break') ? 'lunch_break' : 'out_time';
         try{
           btn.disabled = true;
+const action_type = (kind==='break') ? 'lunch_break' : 'out_time';
+
+const wantSend = (action_type === 'out_time')
+  ? confirm('Send SMS to parents with valid numbers now?')
+  : false;
+
 const resp = await fetch(`${API}/log_behavior_bulk.php`,{
   method:'POST',
   headers:{ 'Content-Type':'application/json', ...FETCH_OPTS.headers },
   credentials: FETCH_OPTS.credentials,
-  body: JSON.stringify({action_type, student_ids})
+  body: JSON.stringify({
+    action_type,
+    student_ids,
+    send_sms: wantSend   // <--- ito ang importante
+  })
 });
 
           const raw = await resp.text();
