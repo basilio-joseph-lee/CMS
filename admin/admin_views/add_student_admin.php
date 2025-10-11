@@ -116,12 +116,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_student_admin'
     }
   }
 
+  if (empty($student_code)) {
+    $student_code = uniqid('STU-');
+}
+
+
   // Insert student
   $ins = $conn->prepare("INSERT INTO students (fullname, gender, avatar_path, face_image_path) VALUES (?, ?, ?, ?)");
   $ins->bind_param("ssss", $fullname, $gender, $avatar_path, $face_image_path);
   $ins->execute();
   $student_id = $conn->insert_id;
   $ins->close();
+
+  
 
   // Enroll to class + subject for selected/loaded SY
   $en = $conn->prepare("INSERT INTO student_enrollments (student_id, advisory_id, school_year_id, subject_id) VALUES (?, ?, ?, ?)");
