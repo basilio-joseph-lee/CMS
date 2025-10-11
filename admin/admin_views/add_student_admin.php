@@ -116,17 +116,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_student_admin'
     }
   }
 
-  if (empty($student_code)) {
-    $student_code = uniqid('STU-');
+  // --- generate a unique student_code (required because of uq_students_code) ---
+$student_code = trim($_POST['student_code'] ?? '');
+if ($student_code === '') {
+  // e.g. STU-2025-AB12CD  (uses current LOAD_SY_ID for traceability)
+  $student_code = 'STU-' . $LOAD_SY_ID . '-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
 }
+
+// guarantee uniqueness in case of a rare collision
+$chk = $conn->prepare("SELECT 1 FROM students WHERE student_code=? LIMIT 1");
+while (true) {
+  $chk->bind_param("s", $student_code);
+  $chk->execute();
+  $exists = $chk->get_result()->fetch_row();
+  if (!$exists) break;
+  // regenerate and recheck
+  $student_code = 'STU-' . $LOAD_SY_ID . '-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+}
+$chk->close();
 
 
   // Insert student
-  $ins = $conn->prepare("INSERT INTO students (fullname, gender, avatar_path, face_image_path) VALUES (?, ?, ?, ?)");
-  $ins->bind_param("ssss", $fullname, $gender, $avatar_path, $face_image_path);
-  $ins->execute();
-  $student_id = $conn->insert_id;
-  $ins->close();
+// Insert student (NOW includes student_code)
+$ins = $conn->prepare("
+  INSERT INTO students (student_code, fullname, gender, avatar_path, face_image_path)
+  VALUES (?, ?, ?, ?, ?)
+");
+$ins->bind_param("sssss", $student_code, $fullname, $gender, $avatar_path, $face_image_path);
+$ins->execute();
+$student_id = $conn->insert_id;
+$ins->close();
 
   
 
