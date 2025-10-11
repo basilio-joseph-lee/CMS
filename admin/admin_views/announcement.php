@@ -3,7 +3,10 @@
 // NOTE: per request, no session/login guard here.
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+
 require_once dirname(__DIR__, 2) . '/config/db.php';
+require_once dirname(__DIR__, 2) . '/config/sms.php'; // <-- Mocean helper (send_sms, ph_e164)
+
 $conn->set_charset('utf8mb4');
 
 // Helpers
@@ -47,37 +50,81 @@ while($row = $rs->fetch_assoc()){
 }
 $sub->close();
 
-/* -------------------- Redirect helper (always back to router tab) -------------------- */
-function redirect_with_toast($type, $msg = '') {
+/* -------------------- SMS target fetcher -------------------- */
+/**
+ * Returns DISTINCT parent mobile numbers (raw as saved) for a section,
+ * optionally filtered by subject, in the given school year.
+ * - If $subjectId is null, sends to ALL students in the section for that SY.
+ */
+function fetch_parent_mobiles_for_admin(mysqli $conn, int $advisoryId, ?int $subjectId, int $schoolYearId): array {
+  if ($subjectId) {
+    $sql = "SELECT DISTINCT p.mobile_number AS msisdn
+            FROM student_enrollments e
+            JOIN students s ON s.student_id = e.student_id
+            JOIN parents  p ON p.parent_id = s.parent_id
+            WHERE e.advisory_id = ?
+              AND e.subject_id = ?
+              AND e.school_year_id = ?
+              AND p.mobile_number IS NOT NULL
+              AND p.mobile_number <> ''";
+    $st = $conn->prepare($sql);
+    $st->bind_param("iii", $advisoryId, $subjectId, $schoolYearId);
+  } else {
+    $sql = "SELECT DISTINCT p.mobile_number AS msisdn
+            FROM student_enrollments e
+            JOIN students s ON s.student_id = e.student_id
+            JOIN parents  p ON p.parent_id = s.parent_id
+            WHERE e.advisory_id = ?
+              AND e.school_year_id = ?
+              AND p.mobile_number IS NOT NULL
+              AND p.mobile_number <> ''";
+    $st = $conn->prepare($sql);
+    $st->bind_param("ii", $advisoryId, $schoolYearId);
+  }
+  $st->execute();
+  $res = $st->get_result();
+  $out = [];
+  while ($row = $res->fetch_assoc()) $out[] = $row['msisdn'];
+  $st->close();
+  return $out;
+}
+
+/* -------------------- Redirect helper -------------------- */
+function redirect_with_toast($type, $msg = '', $extra = []) {
   $qs = $_GET;
   $qs['page'] = 'announcement';
   $qs['success'] = $type;
   if ($msg !== '') { $qs['msg'] = $msg; }
+  foreach ($extra as $k=>$v) { $qs[$k] = $v; }
   $url = 'admin.php?' . http_build_query($qs);
   echo "<script>location.href=" . json_encode($url) . ";</script>";
   exit;
 }
-function toast_redirect($type, $msg = '') { redirect_with_toast($type, $msg); }
+function toast_redirect($type, $msg = '', $extra = []) { redirect_with_toast($type, $msg, $extra); }
 
 /* -------------------- CREATE (multi-section; admin post = teacher_id NULL) -------------------- */
 if (isset($_POST['create_announcement'])) {
   $title = trim(postv('title',''));
   $message = trim(postv('message',''));
   $visible_until = postv('visible_until') ?: null;
-  $subject_name_for_all = postv('subject_name_all', '');
+  $subject_name_for_all = postv('subject_name_all', ''); // optional
   $class_ids = $_POST['class_ids'] ?? [];
 
   if ($title === '' || $message === '' || !is_array($class_ids) || count($class_ids)===0) {
     toast_redirect('error','Missing title/message/section(s).');
   }
 
+  // Insert announcements per section (with or without subject mapping)
   $stmtWith = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until) VALUES (NULL, ?, ?, ?, ?, ?)");
   $stmtWithout = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until) VALUES (NULL, NULL, ?, ?, ?, ?)");
+
+  // Build SMS list across all selected sections (dedup later)
+  $allMobiles = [];
 
   foreach ($class_ids as $cid) {
     $cid = (int)$cid;
 
-    // Try map subject name -> subject_id for this section
+    // map subject name -> subject_id for this section (if provided)
     $subject_id = null;
     if ($subject_name_for_all !== '' && isset($subjectsByAdvisory[$cid])) {
       foreach ($subjectsByAdvisory[$cid] as $s) {
@@ -85,6 +132,7 @@ if (isset($_POST['create_announcement'])) {
       }
     }
 
+    // INSERT announcement row
     if ($subject_id === null) {
       $stmtWithout->bind_param("isss", $cid, $title, $message, $visible_until);
       $stmtWithout->execute();
@@ -92,11 +140,34 @@ if (isset($_POST['create_announcement'])) {
       $stmtWith->bind_param("iisss", $subject_id, $cid, $title, $message, $visible_until);
       $stmtWith->execute();
     }
+
+    // Gather parent numbers for SMS
+    $mobiles = fetch_parent_mobiles_for_admin($conn, $cid, $subject_id, $ACTIVE_SY_ID);
+    if (!empty($mobiles)) $allMobiles = array_merge($allMobiles, $mobiles);
   }
   $stmtWith->close();
   $stmtWithout->close();
 
-  toast_redirect('created', 'Posted to '.count($class_ids).' section(s).');
+  // Dedup mobile numbers
+  $allMobiles = array_values(array_unique($allMobiles));
+
+  // Compose SMS (from “Admin”)
+  $smsText = "From Admin: " . mb_substr($title, 0, 60) . " — " . mb_substr($message, 0, 100);
+
+  // Send and count
+  $okCount = 0; $failCount = 0;
+  $debugPack = [];
+  foreach ($allMobiles as $msisdn) {
+    $r = send_sms($msisdn, $smsText);
+    $debugPack[] = $r;
+    if ($r['ok']) $okCount++; else $failCount++;
+  }
+  $_SESSION['sms_debug_admin'] = $debugPack;
+
+  toast_redirect('created', 'Posted to '.count($class_ids).' section(s).', [
+    'sms_sent' => $okCount,
+    'sms_failed' => $failCount
+  ]);
 }
 
 /* -------------------- DELETE -------------------- */
@@ -176,7 +247,7 @@ while($row = $list->fetch_assoc()){ $rows[] = $row; }
 $stmt->close();
 
 /* -------------------- Toast map -------------------- */
-$toast='';
+$toast=''; $smsBanner='';
 if (isset($_GET['success'])) {
   $map = [
     'created' => 'Announcement posted successfully!',
@@ -185,6 +256,11 @@ if (isset($_GET['success'])) {
     'error'   => 'Error: '.($_GET['msg'] ?? 'Please check inputs.')
   ];
   $toast = $map[$_GET['success']] ?? '';
+}
+$sent  = isset($_GET['sms_sent'])   ? (int)$_GET['sms_sent']   : null;
+$fail  = isset($_GET['sms_failed']) ? (int)$_GET['sms_failed'] : null;
+if ($sent !== null || $fail !== null) {
+  $smsBanner = "SMS sent to ".(int)$sent." parent(s), failed: ".(int)$fail;
 }
 ?>
 <!DOCTYPE html>
@@ -201,43 +277,16 @@ if (isset($_GET['success'])) {
   .truncate-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .icon-btn { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:8px; }
 
-  /* --- Responsive Table Cards on small screens --- */
-/* Responsive layout fix: keeps table intact for medium screens */
-@media (max-width: 1024px) {
-  .table-auto {
-    display: block;
-    overflow-x: auto;
-    white-space: nowrap;
+  @media (max-width: 1024px) {
+    .table-auto { display:block; overflow-x:auto; white-space:nowrap; }
   }
-}
-
-@media (max-width: 640px) {
-  table thead { display: none; }
-  table, table tbody, table tr, table td { display: block; width: 100%; }
-  table tr {
-    margin-bottom: 1rem;
-    background: #fff;
-    border-radius: 0.5rem;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  @media (max-width: 640px) {
+    table thead { display:none; }
+    table, table tbody, table tr, table td { display:block; width:100%; }
+    table tr { margin-bottom:1rem; background:#fff; border-radius:.5rem; box-shadow:0 2px 5px rgba(0,0,0,.05); }
+    table td { text-align:right; padding:.75rem 1rem; position:relative; border:none; }
+    table td::before { content:attr(data-label); position:absolute; left:1rem; font-weight:600; color:#4b5563; }
   }
-  table td {
-    text-align: right;
-    padding: 0.75rem 1rem;
-    position: relative;
-    word-wrap: break-word;
-    border: none;
-  }
-  table td::before {
-    content: attr(data-label);
-    position: absolute;
-    left: 1rem;
-    font-weight: 600;
-    text-align: left;
-    color: #4b5563;
-  }
-}
-
-  
 </style>
 </head>
 <body class="bg-gray-50">
@@ -286,88 +335,103 @@ if (isset($_GET['success'])) {
     <script>setTimeout(()=>document.querySelector('.fixed.top-4')?.remove(), 2300);</script>
   <?php endif; ?>
 
-  <!-- Table (now responsive) -->
-<div class="bg-white rounded-xl shadow overflow-x-auto">
-  <div class="overflow-y-auto" style="max-height: 400px;"> <!-- ✅ you can adjust this height -->
-    <table class="min-w-full text-sm table-auto">
+  <?php if ($smsBanner): ?>
+    <div class="fixed top-16 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow"><?= h($smsBanner) ?></div>
+    <script>setTimeout(()=>document.querySelector('.fixed.top-16')?.remove(), 3000);</script>
+  <?php endif; ?>
 
-      <thead class="bg-gray-100 text-gray-700">
-        <tr>
-          <th class="text-left px-4 py-3">Title</th>
-          <th class="text-left px-4 py-3">Message</th>
-          <th class="text-left px-4 py-3">Section</th>
-          <th class="text-left px-4 py-3">Subject</th>
-          <th class="text-left px-4 py-3">Posted By</th>
-          <th class="text-left px-4 py-3">Date</th>
-          <th class="text-left px-4 py-3">Visible Until</th>
-          <th class="text-center px-3 py-3">Actions</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-gray-100">
-        <?php if (empty($rows)): ?>
-          <tr><td colspan="8" class="px-4 py-8 text-center text-gray-500">No announcements found.</td></tr>
-        <?php else: foreach($rows as $row): ?>
-          <tr class="hover:bg-gray-50">
-            <td data-label="Title" class="px-4 py-3 font-medium text-gray-900"><?= h($row['title']) ?></td>
-            <td data-label="Message" class="px-4 py-3 text-gray-700 break-words max-w-[200px]">
-              <div class="truncate-2"><?= nl2br(h($row['message'])) ?></div>
-            </td>
-            <td data-label="Section" class="px-4 py-3">
-              <span class="inline-block bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">
-                <?= h($row['class_name'] ?? ('#'.$row['class_id'])) ?>
-              </span>
-            </td>
-            <td data-label="Subject" class="px-4 py-3">
-              <span class="inline-block bg-indigo-50 text-indigo-700 text-xs px-2 py-1 rounded">
-                <?= h($row['subject_name'] ?? '—') ?>
-              </span>
-            </td>
-            <td data-label="Posted By" class="px-4 py-3">
-              <?php if (empty($row['teacher_name'])): ?>
-                <span class="inline-block bg-emerald-50 text-emerald-700 text-xs px-2 py-1 rounded">Admin</span>
-              <?php else: ?>
-                <span class="inline-block bg-amber-50 text-amber-700 text-xs px-2 py-1 rounded"><?= h($row['teacher_name']) ?></span>
-              <?php endif; ?>
-            </td>
-            <td data-label="Date" class="px-4 py-3 text-gray-600 whitespace-nowrap">
-              <?= $row['date_posted'] ? date('M d, Y h:i A', strtotime($row['date_posted'])) : '—' ?>
-            </td>
-            <td data-label="Visible Until" class="px-4 py-3 text-gray-600 whitespace-nowrap">
-              <?= $row['visible_until'] ? date('M d, Y', strtotime($row['visible_until'])) : '—' ?>
-            </td>
-            <td data-label="Actions" class="px-3 py-2 text-center">
-              <!-- Edit -->
-              <button class="icon-btn mr-2 hover:bg-yellow-100" title="Edit"
-                onclick='openEdit(<?= json_encode([
-                  "id"=>$row["id"],
-                  "title"=>$row["title"],
-                  "message"=>$row["message"],
-                  "class_id"=>$row["class_id"],
-                  "subject_name"=>$row["subject_name"],
-                  "visible_until"=>$row["visible_until"]
-                ], JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT) ?>)'>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-yellow-600">
-                  <path d="M12 20h9" stroke-width="2" stroke-linecap="round"/>
-                  <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </button>
-              <!-- Delete -->
-              <form method="POST" class="inline" onsubmit="return confirm('Delete this announcement?')">
-                <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
-                <button name="delete_announcement" class="icon-btn hover:bg-red-100" title="Delete">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-red-600">
-                    <polyline points="3 6 5 6 21 6" stroke-width="2" stroke-linecap="round"/>
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke-width="2" stroke-linecap="round"/>
-                    <line x1="10" y1="11" x2="10" y2="17" stroke-width="2" stroke-linecap="round"/>
-                    <line x1="14" y1="11" x2="14" y2="17" stroke-width="2" stroke-linecap="round"/>
+  <!-- Optional console dump for last send -->
+  <?php if (!empty($_SESSION['sms_debug_admin'])): ?>
+    <script>
+      console.group('Admin SMS debug (last send)');
+      <?php foreach ($_SESSION['sms_debug_admin'] as $r): ?>
+        console.log(<?= json_encode($r, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) ?>);
+      <?php endforeach; unset($_SESSION['sms_debug_admin']); ?>
+      console.groupEnd();
+    </script>
+  <?php endif; ?>
+
+  <!-- Table -->
+  <div class="bg-white rounded-xl shadow overflow-x-auto">
+    <div class="overflow-y-auto" style="max-height: 400px;">
+      <table class="min-w-full text-sm table-auto">
+        <thead class="bg-gray-100 text-gray-700">
+          <tr>
+            <th class="text-left px-4 py-3">Title</th>
+            <th class="text-left px-4 py-3">Message</th>
+            <th class="text-left px-4 py-3">Section</th>
+            <th class="text-left px-4 py-3">Subject</th>
+            <th class="text-left px-4 py-3">Posted By</th>
+            <th class="text-left px-4 py-3">Date</th>
+            <th class="text-left px-4 py-3">Visible Until</th>
+            <th class="text-center px-3 py-3">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          <?php if (empty($rows)): ?>
+            <tr><td colspan="8" class="px-4 py-8 text-center text-gray-500">No announcements found.</td></tr>
+          <?php else: foreach($rows as $row): ?>
+            <tr class="hover:bg-gray-50">
+              <td data-label="Title" class="px-4 py-3 font-medium text-gray-900"><?= h($row['title']) ?></td>
+              <td data-label="Message" class="px-4 py-3 text-gray-700 break-words max-w-[200px]">
+                <div class="truncate-2"><?= nl2br(h($row['message'])) ?></div>
+              </td>
+              <td data-label="Section" class="px-4 py-3">
+                <span class="inline-block bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">
+                  <?= h($row['class_name'] ?? ('#'.$row['class_id'])) ?>
+                </span>
+              </td>
+              <td data-label="Subject" class="px-4 py-3">
+                <span class="inline-block bg-indigo-50 text-indigo-700 text-xs px-2 py-1 rounded">
+                  <?= h($row['subject_name'] ?? '—') ?>
+                </span>
+              </td>
+              <td data-label="Posted By" class="px-4 py-3">
+                <?php if (empty($row['teacher_name'])): ?>
+                  <span class="inline-block bg-emerald-50 text-emerald-700 text-xs px-2 py-1 rounded">Admin</span>
+                <?php else: ?>
+                  <span class="inline-block bg-amber-50 text-amber-700 text-xs px-2 py-1 rounded"><?= h($row['teacher_name']) ?></span>
+                <?php endif; ?>
+              </td>
+              <td data-label="Date" class="px-4 py-3 text-gray-600 whitespace-nowrap">
+                <?= $row['date_posted'] ? date('M d, Y h:i A', strtotime($row['date_posted'])) : '—' ?>
+              </td>
+              <td data-label="Visible Until" class="px-4 py-3 text-gray-600 whitespace-nowrap">
+                <?= $row['visible_until'] ? date('M d, Y', strtotime($row['visible_until'])) : '—' ?>
+              </td>
+              <td data-label="Actions" class="px-3 py-2 text-center">
+                <!-- Edit -->
+                <button class="icon-btn mr-2 hover:bg-yellow-100" title="Edit"
+                  onclick='openEdit(<?= json_encode([
+                    "id"=>$row["id"],
+                    "title"=>$row["title"],
+                    "message"=>$row["message"],
+                    "class_id"=>$row["class_id"],
+                    "subject_name"=>$row["subject_name"],
+                    "visible_until"=>$row["visible_until"]
+                  ], JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT) ?>)'>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-yellow-600">
+                    <path d="M12 20h9" stroke-width="2" stroke-linecap="round"/>
+                    <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                 </button>
-              </form>
-            </td>
-          </tr>
-        <?php endforeach; endif; ?>
-      </tbody>
-    </table>
+                <!-- Delete -->
+                <form method="POST" class="inline" onsubmit="return confirm('Delete this announcement?')">
+                  <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
+                  <button name="delete_announcement" class="icon-btn hover:bg-red-100" title="Delete">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-red-600">
+                      <polyline points="3 6 5 6 21 6" stroke-width="2" stroke-linecap="round"/>
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" stroke-width="2" stroke-linecap="round"/>
+                      <line x1="10" y1="11" x2="10" y2="17" stroke-width="2" stroke-linecap="round"/>
+                      <line x1="14" y1="11" x2="14" y2="17" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                </form>
+              </td>
+            </tr>
+          <?php endforeach; endif; ?>
+        </tbody>
+      </table>
     </div>
   </div>
 </div>
