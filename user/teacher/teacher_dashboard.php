@@ -194,11 +194,8 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
   <div id="toast" class="fixed top-5 right-5 px-4 py-3 rounded-xl shadow text-white font-bold hidden"></div>
 
 <script>
-  // Toast helper
-  const toastBox = document.createElement('div');
-  toastBox.id = 'toast';
-  toastBox.className = 'fixed top-5 right-5 px-4 py-3 rounded-xl shadow text-white font-bold hidden';
-  document.body.appendChild(toastBox);
+  // ===== Toast using existing #toast =====
+  const toastBox = document.getElementById('toast');
   function toast(msg, type='ok'){
     toastBox.textContent = msg;
     toastBox.style.background = (type==='err') ? '#ef4444' : '#16a34a';
@@ -206,24 +203,11 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
     setTimeout(()=>toastBox.classList.add('hidden'), 1800);
   }
 
-  const pendingBox   = document.createElement('div');
-  pendingBox.id = 'pendingBox';
-  pendingBox.className = 'w-full max-w-7xl mt-8 hidden';
-  pendingBox.innerHTML = `
-    <div class="bg-white/95 rounded-3xl shadow-lg border p-4 sm:p-5">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg sm:text-xl font-extrabold">⏳ Pending Out Time Requests</h2>
-        <button id="btnRefreshReq" class="text-sm px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700">Refresh</button>
-      </div>
-      <div id="pendingList" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"></div>
-      <div id="emptyState" class="text-sm text-gray-600">No pending requests.</div>
-    </div>
-  `;
-  document.body.appendChild(pendingBox);
-
-  const pendingList  = document.getElementById('pendingList');
-  const emptyState   = document.getElementById('emptyState');
-  const btnRefreshReq= document.getElementById('btnRefreshReq');
+  // ===== Use the panel that already exists in the HTML =====
+  const pendingBox    = document.getElementById('pendingBox');
+  const pendingList   = document.getElementById('pendingList');
+  const emptyState    = document.getElementById('emptyState');
+  const btnRefreshReq = document.getElementById('btnRefreshReq');
 
   function renderPending(items){
     if (!Array.isArray(items) || items.length === 0){
@@ -234,11 +218,12 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
     }
     pendingBox.classList.remove('hidden');
     emptyState.classList.add('hidden');
+
     pendingList.innerHTML = items.map(it => `
       <div class="border rounded-2xl p-3 bg-white/80 shadow-sm">
         <div class="font-bold text-base">${it.student_name}</div>
         <div class="text-xs text-gray-500 mt-0.5">
-          Requested: ${new Date(it.requested_at.replace(' ','T')).toLocaleString()}
+          Requested: ${new Date((it.requested_at || '').replace(' ','T')).toLocaleString()}
         </div>
         <div class="mt-3 flex gap-2">
           <button class="px-3 py-1.5 rounded-lg bg-green-600 text-white hover:bg-green-700"
@@ -250,45 +235,49 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
     `).join('');
 
     pendingList.querySelectorAll('[data-approve]').forEach(b=>{
-      b.onclick = ()=> decideReq(b.dataset.approve, 'approve', b);
+      b.onclick = ()=> decideReq(b.dataset.approve, 'approve');
     });
     pendingList.querySelectorAll('[data-deny]').forEach(b=>{
-      b.onclick = ()=> decideReq(b.dataset.deny, 'deny', b);
+      b.onclick = ()=> decideReq(b.dataset.deny, 'deny');
     });
   }
 
- async function loadPending() {
-  try {
-    const r = await fetch('/api/out_time_requests_list.php', { credentials: 'include' });
-    const j = await r.json();
-    console.log('pending:', j); // keep for debug
-    renderPending(j.ok ? j.items : []);
-  } catch (e) {
-    console.error(e);
-    renderPending([]);
+  async function loadPending() {
+    try {
+      const r = await fetch('/api/out_time_requests_list.php', { credentials: 'include' });
+      const j = await r.json();
+      console.log('pending:', j);
+      renderPending(j.ok ? j.items : []);
+    } catch (e) {
+      console.error(e);
+      renderPending([]);
+    }
   }
-}
 
-async function decideReq(id, action) {
-  try {
-    const r = await fetch('/api/out_time_request_decide.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ id, action }) // action: 'approve' | 'deny'
-    });
-    const j = await r.json();
-    if (j.ok) await loadPending();
-    else alert(j.message || 'Failed');
-  } catch (e) {
-    alert('Network error');
+  async function decideReq(id, action) {
+    try {
+      const r = await fetch('/api/out_time_request_decide.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ id, action }) // 'approve' | 'deny'
+      });
+      const j = await r.json();
+      if (j.ok) {
+        toast(action === 'approve' ? 'Approved' : 'Denied');
+        await loadPending();
+      } else {
+        toast(j.message || 'Failed', 'err');
+      }
+    } catch (e) {
+      toast('Network error', 'err');
+    }
   }
-}
 
-
-  btnRefreshReq.addEventListener('click', fetchPending);
-  fetchPending();
-  setInterval(fetchPending, 5000);
+  // Hook up refresh button and auto-poll
+  btnRefreshReq.addEventListener('click', loadPending);
+  loadPending();
+  setInterval(loadPending, 5000);
 </script>
 
 </body>
