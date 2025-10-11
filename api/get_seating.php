@@ -3,15 +3,16 @@
 session_start();
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['teacher_id'])) {
+// allow teacher OR student viewer
+if (!isset($_SESSION['teacher_id']) && !isset($_SESSION['student_id'])) {
   http_response_code(403);
   echo json_encode(['seating'=>[]]);
   exit;
 }
 
-$sy = intval($_SESSION['school_year_id'] ?? 0);
-$ad = intval($_SESSION['advisory_id'] ?? 0);
-$sj = intval($_SESSION['subject_id'] ?? 0);
+$sy = intval($_SESSION['school_year_id'] ?? ($_GET['school_year_id'] ?? 0));
+$ad = intval($_SESSION['advisory_id']    ?? ($_GET['advisory_id']    ?? 0));
+$sj = intval($_SESSION['subject_id']     ?? ($_GET['subject_id']     ?? 0));
 
 require_once __DIR__ . '/../config/db.php';
 if ($conn->connect_error) {
