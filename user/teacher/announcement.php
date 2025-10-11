@@ -100,20 +100,25 @@ if (isset($_POST['add'])) {
   }
 
   // 4) Send SMS (best-effort)
-  if (($audience === 'PARENT' || $audience === 'BOTH') && !empty($mobiles)) {
-    // Keep the text concise for SMS; you can adjust limits
-    $msgTitle = mb_substr($title, 0, 70);
-    $msgBody  = mb_substr($message, 0, 120);
-    $smsText  = "From {$teacherName} ({$class_name}): {$msgTitle}" . ($msgBody ? " — {$msgBody}" : "");
+if (($audience === 'PARENT' || $audience === 'BOTH') && !empty($mobiles)) {
+    $msg = "From {$teacherName}: " . mb_substr($title, 0, 60) . " — " . mb_substr($message, 0, 100);
 
-    $sent=0; $fail=0;
+    $okCount = 0; 
+    $failCount = 0; 
+    $debug = [];
+
     foreach ($mobiles as $msisdn) {
-      try { if (send_sms($msisdn, $smsText) === true) $sent++; else $fail++; }
-      catch(Throwable $e){ $fail++; }
+        $r = send_sms($msisdn, $msg);
+        $debug[] = $r;
+        if ($r['ok']) $okCount++; else $failCount++;
     }
-    header("Location: announcement.php?success=added&sms_sent={$sent}&sms_failed={$fail}");
+
+    // Optional: inspect details after redirect
+    $_SESSION['sms_debug'] = $debug;
+
+    header("Location: announcement.php?success=added&sms_sent={$okCount}&sms_failed={$failCount}");
     exit;
-  }
+}
 
   // 5) No SMS case
   header("Location: announcement.php?success=added");
