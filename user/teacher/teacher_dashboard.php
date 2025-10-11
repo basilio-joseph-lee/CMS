@@ -169,9 +169,9 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
         <label class="block text-sm font-semibold">Select Section:</label>
         <select name="advisory_id" required class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-300">
           <?php
-          $conn2 = @new mysqli("localhost", "root", "", "cms");
-          if (!$conn2->connect_error) {
-            $res = $conn2->query("SELECT advisory_id, class_name FROM advisory_classes");
+          include '../../config/db.php';
+          if (!$conn->connect_error) {
+            $res = $conn->query("SELECT advisory_id, class_name FROM advisory_classes");
             if ($res) { while ($row = $res->fetch_assoc()) {
               echo "<option value='{$row['advisory_id']}'>".htmlspecialchars($row['class_name'])."</option>";
             } }
