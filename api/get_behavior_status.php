@@ -6,8 +6,7 @@ header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
 header('Expires: 0');
 
-// teacher OR student may view live statuses
-if (!isset($_SESSION['teacher_id']) && !isset($_SESSION['student_id'])) {
+if (!isset($_SESSION['teacher_id'])) {
   http_response_code(403);
   echo json_encode(['ok'=>false,'message'=>'Forbidden']);
   exit;
@@ -57,17 +56,9 @@ $sql = "
     FROM behavior_logs
     GROUP BY student_id
   ) last
-    ON last.student_id = bl.student_id AND last.ts = bl.timestamp
-  INNER JOIN student_enrollments se
-    ON se.student_id = bl.student_id
-  WHERE se.school_year_id = ?
-    AND se.advisory_id    = ?
-    AND se.subject_id     = ?
+  ON last.student_id = bl.student_id AND last.ts = bl.timestamp
 ";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param('iii', $sy, $ad, $sj);
-$stmt->execute();
-$res = $stmt->get_result();
+$res = $conn->query($sql);
 
 $map = [];
 $rows = 0;

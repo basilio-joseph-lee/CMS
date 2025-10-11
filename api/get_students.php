@@ -2,23 +2,18 @@
 session_start();
 header('Content-Type: application/json');
 
-// teacher OR student can read roster
-if (!isset($_SESSION['teacher_id']) && !isset($_SESSION['student_id'])) {
-  http_response_code(403);
-  echo json_encode(['students'=>[]]);
-  exit;
-}
+if (!isset($_SESSION['teacher_id'])) { http_response_code(403); echo json_encode(['students'=>[]]); exit; }
 
-$teacher_id = intval($_SESSION['teacher_id'] ?? 0);
-$sy = intval($_SESSION['school_year_id'] ?? ($_GET['school_year_id'] ?? 0));
-$ad = intval($_SESSION['advisory_id']    ?? ($_GET['advisory_id']    ?? 0));
-$sj = intval($_SESSION['subject_id']     ?? ($_GET['subject_id']     ?? 0));
+$teacher_id = intval($_SESSION['teacher_id']);
+$sy = intval($_SESSION['school_year_id'] ?? 0);
+$ad = intval($_SESSION['advisory_id']    ?? 0);
+$sj = intval($_SESSION['subject_id']     ?? 0);
 
     include __DIR__ . '/../config/db.php';
 if ($conn->connect_error) { http_response_code(500); echo json_encode(['students'=>[]]); exit; }
 
-/* If advisory/subject not set, derive from teacher ONLY when a teacher is logged in */
-if ((!$ad || !$sj) && $teacher_id > 0) {
+/* If advisory/subject not set (or wrong), derive the pair for this teacher from active SY */
+if (!$ad || !$sj) {
   $q = $conn->prepare("
     SELECT s.advisory_id, s.subject_id, s.school_year_id
     FROM subjects s
