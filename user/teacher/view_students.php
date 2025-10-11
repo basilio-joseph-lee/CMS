@@ -3,15 +3,14 @@ session_start();
 include '../../config/teacher_guard.php';
 include "../../config/db.php";
 
-
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-// Handle edit
+/* ---------------- Handle edit ---------------- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
-  $id = $_POST['student_id'];
-  $name = $_POST['fullname'];
+  $id = (int)$_POST['student_id'];
+  $name = trim($_POST['fullname']);
   $gender = $_POST['gender'];
   $stmt = $conn->prepare("UPDATE students SET fullname = ?, gender = ? WHERE student_id = ?");
   $stmt->bind_param("ssi", $name, $gender, $id);
@@ -22,9 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
   exit;
 }
 
-// Handle delete
+/* ---------------- Handle delete ---------------- */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
-  $id = $_POST['student_id'];
+  $id = (int)$_POST['student_id'];
   $stmt = $conn->prepare("DELETE FROM students WHERE student_id = ?");
   $stmt->bind_param("i", $id);
   $stmt->execute();
@@ -34,25 +33,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
   exit;
 }
 
-$subject_id = $_SESSION['subject_id'];
-$advisory_id = $_SESSION['advisory_id'];
-$school_year_id = $_SESSION['school_year_id'];
-$subject_name = $_SESSION['subject_name'];
-$class_name = $_SESSION['class_name'];
-$year_label = $_SESSION['year_label'];
-$teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
+/* ---------------- Context from session ---------------- */
+$subject_id     = $_SESSION['subject_id'];      // kept for header display
+$advisory_id    = (int)$_SESSION['advisory_id'];
+$school_year_id = (int)$_SESSION['school_year_id'];
+$subject_name   = $_SESSION['subject_name'];
+$class_name     = $_SESSION['class_name'];
+$year_label     = $_SESSION['year_label'];
+$teacherName    = $_SESSION['teacher_fullname'] ?? 'Teacher';
 
-
-$stmt = $conn->prepare("SELECT s.student_id, s.fullname, s.gender, s.avatar_path 
-                        FROM students s
-                        JOIN student_enrollments e ON s.student_id = e.student_id
-                        WHERE e.subject_id = ? AND e.advisory_id = ? AND e.school_year_id = ?");
-$stmt->bind_param("iii", $subject_id, $advisory_id, $school_year_id);
+/* ---------------- Fetch students (BY SECTION + YEAR) ---------------- */
+/* This shows ALL students enrolled in the section for the school year,
+   regardless of which subject row they were enrolled under. */
+$stmt = $conn->prepare("
+  SELECT DISTINCT
+      s.student_id,
+      s.fullname,
+      s.gender,
+      s.avatar_path
+  FROM student_enrollments e
+  JOIN students s ON s.student_id = e.student_id
+  WHERE e.advisory_id = ? AND e.school_year_id = ?
+  ORDER BY s.fullname ASC
+");
+$stmt->bind_param("ii", $advisory_id, $school_year_id);
 $stmt->execute();
-$result = $stmt->get_result();
+$result   = $stmt->get_result();
 $students = $result->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -65,9 +74,7 @@ $students = $result->fetch_all(MYSQLI_ASSOC);
       background-size: cover;
       background-position: center;
       font-family: 'Comic Sans MS', cursive, sans-serif;
-      
     }
-    
   </style>
 </head>
 <body class="px-6 py-8">
@@ -77,7 +84,6 @@ $students = $result->fetch_all(MYSQLI_ASSOC);
   <?= $_SESSION['toast_type'] === 'success' ? 'bg-green-500' : 'bg-red-500' ?> text-white font-semibold text-center">
   <?= $_SESSION['toast'] ?>
 </div>
-
   <script>
     setTimeout(() => {
       const toast = document.getElementById('toast');
@@ -90,20 +96,20 @@ $students = $result->fetch_all(MYSQLI_ASSOC);
 
 <div class="flex justify-between items-center bg-green-800 text-white px-6 py-4 rounded-xl shadow-lg mb-6">
   <div>
-    <h1 class="text-xl font-bold">👨‍🏫 <?= $teacherName ?></h1>
+    <h1 class="text-xl font-bold">👨‍🏫 <?= htmlspecialchars($teacherName) ?></h1>
     <p class="text-sm">
-      Subject: <?= $subject_name ?> |
-      Section: <?= $class_name ?> |
-      SY: <?= $year_label ?>
+      Subject: <?= htmlspecialchars($subject_name) ?> |
+      Section: <?= htmlspecialchars($class_name) ?> |
+      SY: <?= htmlspecialchars($year_label) ?>
     </p>
   </div>
   <form action="teacher_dashboard.php" method="post">
-    <input type="hidden" name="subject_id" value="<?= $subject_id ?>">
-    <input type="hidden" name="advisory_id" value="<?= $advisory_id ?>">
-    <input type="hidden" name="school_year_id" value="<?= $school_year_id ?>">
-    <input type="hidden" name="subject_name" value="<?= $subject_name ?>">
-    <input type="hidden" name="class_name" value="<?= $class_name ?>">
-    <input type="hidden" name="year_label" value="<?= $year_label ?>">
+    <input type="hidden" name="subject_id" value="<?= (int)$subject_id ?>">
+    <input type="hidden" name="advisory_id" value="<?= (int)$advisory_id ?>">
+    <input type="hidden" name="school_year_id" value="<?= (int)$school_year_id ?>">
+    <input type="hidden" name="subject_name" value="<?= htmlspecialchars($subject_name) ?>">
+    <input type="hidden" name="class_name" value="<?= htmlspecialchars($class_name) ?>">
+    <input type="hidden" name="year_label" value="<?= htmlspecialchars($year_label) ?>">
     <button type="submit" class="bg-orange-400 hover:bg-orange-500 px-4 py-2 rounded-lg font-semibold shadow text-white">← Back</button>
   </form>
 </div>
@@ -129,17 +135,17 @@ $students = $result->fetch_all(MYSQLI_ASSOC);
         <tr class="border-b">
           <td class="px-4 py-3 border"><?= $i++ ?></td>
           <td class="px-4 py-3 border">
-            <?php if (!empty($student['avatar_path']) && file_exists('../' . $student['avatar_path'])): ?>
-              <img src="../<?= $student['avatar_path'] ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
+            <?php if (!empty($student['avatar_path']) && (strpos($student['avatar_path'], 'http') === 0 || file_exists('../' . ltrim($student['avatar_path'], '/')))): ?>
+              <img src="<?= htmlspecialchars((strpos($student['avatar_path'], 'http') === 0) ? $student['avatar_path'] : '../' . ltrim($student['avatar_path'], '/')) ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
             <?php else: ?>
               <div class="w-10 h-10 bg-yellow-300 rounded-full flex items-center justify-center text-lg">👤</div>
             <?php endif; ?>
           </td>
           <td class="px-4 py-3 border name-cell"><?= htmlspecialchars($student['fullname']) ?></td>
-          <td class="px-4 py-3 border"><?= $student['gender'] ?></td>
+          <td class="px-4 py-3 border"><?= htmlspecialchars($student['gender']) ?></td>
           <td class="px-4 py-3 border">
-            <button onclick="openEditModal(<?= $student['student_id'] ?>)" class="text-blue-600 text-sm hover:underline mr-2">✏️ Edit</button>
-            <button onclick="openDeleteModal(<?= $student['student_id'] ?>)" class="text-red-600 text-sm hover:underline">🗑️ Delete</button>
+            <button onclick="openEditModal(<?= (int)$student['student_id'] ?>)" class="text-blue-600 text-sm hover:underline mr-2">✏️ Edit</button>
+            <button onclick="openDeleteModal(<?= (int)$student['student_id'] ?>)" class="text-red-600 text-sm hover:underline">🗑️ Delete</button>
           </td>
         </tr>
       <?php endforeach; ?>
@@ -148,33 +154,33 @@ $students = $result->fetch_all(MYSQLI_ASSOC);
 </div>
 
 <?php foreach ($students as $student): ?>
-  <div id="editModal<?= $student['student_id'] ?>" class="fixed inset-0 z-50 hidden bg-black bg-opacity-50 flex justify-center items-center">
+  <div id="editModal<?= (int)$student['student_id'] ?>" class="fixed inset-0 z-50 hidden bg-black bg-opacity-50 flex justify-center items-center">
     <form method="POST" class="bg-white p-6 rounded-lg shadow-lg w-96 space-y-4">
-      <input type="hidden" name="student_id" value="<?= $student['student_id'] ?>">
+      <input type="hidden" name="student_id" value="<?= (int)$student['student_id'] ?>">
       <input type="hidden" name="edit_student" value="1">
       <h2 class="text-lg font-bold">Edit Student</h2>
       <label class="block text-sm font-semibold">Full Name</label>
       <input type="text" name="fullname" value="<?= htmlspecialchars($student['fullname']) ?>" class="w-full border rounded px-3 py-2">
       <label class="block text-sm font-semibold">Gender</label>
       <select name="gender" class="w-full border rounded px-3 py-2">
-        <option value="Male" <?= $student['gender'] === 'Male' ? 'selected' : '' ?>>Male</option>
+        <option value="Male"   <?= $student['gender'] === 'Male'   ? 'selected' : '' ?>>Male</option>
         <option value="Female" <?= $student['gender'] === 'Female' ? 'selected' : '' ?>>Female</option>
       </select>
       <div class="flex justify-end gap-2 pt-4">
-        <button type="button" onclick="closeModal('editModal<?= $student['student_id'] ?>')" class="text-gray-600">Cancel</button>
+        <button type="button" onclick="closeModal('editModal<?= (int)$student['student_id'] ?>')" class="text-gray-600">Cancel</button>
         <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">Update</button>
       </div>
     </form>
   </div>
 
-  <div id="deleteModal<?= $student['student_id'] ?>" class="fixed inset-0 z-50 hidden bg-black bg-opacity-50 flex justify-center items-center">
+  <div id="deleteModal<?= (int)$student['student_id'] ?>" class="fixed inset-0 z-50 hidden bg-black bg-opacity-50 flex justify-center items-center">
     <form method="POST" class="bg-white p-6 rounded-lg shadow-lg w-96 space-y-4">
-      <input type="hidden" name="student_id" value="<?= $student['student_id'] ?>">
+      <input type="hidden" name="student_id" value="<?= (int)$student['student_id'] ?>">
       <input type="hidden" name="delete_student" value="1">
       <h2 class="text-lg font-bold text-gray-800">Delete Student</h2>
       <p>Are you sure you want to delete <strong><?= htmlspecialchars($student['fullname']) ?></strong>?</p>
       <div class="flex justify-end gap-2">
-        <button type="button" onclick="closeModal('deleteModal<?= $student['student_id'] ?>')" class="text-gray-600">Cancel</button>
+        <button type="button" onclick="closeModal('deleteModal<?= (int)$student['student_id'] ?>')" class="text-gray-600">Cancel</button>
         <button type="submit" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded">Delete</button>
       </div>
     </form>
@@ -182,22 +188,14 @@ $students = $result->fetch_all(MYSQLI_ASSOC);
 <?php endforeach; ?>
 
 <script>
-  function openEditModal(id) {
-    document.getElementById('editModal' + id).classList.remove('hidden');
-  }
-  function openDeleteModal(id) {
-    document.getElementById('deleteModal' + id).classList.remove('hidden');
-  }
-  function closeModal(id) {
-    document.getElementById(id).classList.add('hidden');
-  }
+  function openEditModal(id){ document.getElementById('editModal'+id).classList.remove('hidden'); }
+  function openDeleteModal(id){ document.getElementById('deleteModal'+id).classList.remove('hidden'); }
+  function closeModal(id){ document.getElementById(id).classList.add('hidden'); }
 
   document.getElementById('searchInput').addEventListener('input', function () {
     const filter = this.value.toLowerCase();
-    const rows = document.querySelectorAll('#studentsTable tbody tr');
-    rows.forEach(row => {
-      const nameCell = row.querySelector('.name-cell');
-      const name = nameCell.textContent.toLowerCase();
+    document.querySelectorAll('#studentsTable tbody tr').forEach(row => {
+      const name = row.querySelector('.name-cell')?.textContent.toLowerCase() || '';
       row.style.display = name.includes(filter) ? '' : 'none';
     });
   });
