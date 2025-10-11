@@ -141,6 +141,10 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     <button class="tile t-pink"   data-action="snack"     aria-label="Snack">
       <span class="emoji">🍎</span><div class="label">Snack</div>
     </button>
+    <button class="tile t-rose" id="btnAskOut" aria-label="Ask Out Time">
+  <span class="emoji">🚪</span><div class="label">Out Time</div>
+</button>
+
     <button class="tile t-cyan"   data-action="water_break" aria-label="Water Break">
       <span class="emoji">💧</span><div class="label">Water</div>
     </button>
@@ -238,6 +242,34 @@ function paintStatus(action, ts){
   }
   lastTime.textContent = ts ? `Last update: ${fmtTime(ts)}` : '—';
 }
+
+const btnAskOut = document.getElementById('btnAskOut');
+let myReqPoll = null;
+
+async function askOutTime(){
+  try{
+    setBusy(true);
+    const r = await fetch('../api/out_time_request.php', {method:'POST',credentials:'include'});
+    const j = await r.json();
+    if(!j.ok){ toast(j.message || 'Request failed','err'); return; }
+    toast(j.dup ? 'Already pending approval' : 'Request sent to teacher');
+
+    // show pending state
+    statusChip.classList.add('bad');
+    statusChip.textContent = '⏳ Waiting for teacher approval';
+    statusText.textContent  = 'Your Out Time request is pending.';
+
+    // start polling your own status (the teacher will change it to out_time once approved)
+    if(myReqPoll) clearInterval(myReqPoll);
+    myReqPoll = setInterval(loadStatus, 3000);
+  }catch(e){
+    toast('Network error','err');
+  }finally{
+    setBusy(false);
+  }
+}
+
+btnAskOut.addEventListener('click', askOutTime);
 
 // Fetch current behavior
 async function loadStatus(){
