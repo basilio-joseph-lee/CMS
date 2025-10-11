@@ -1,5 +1,5 @@
 <?php
-include __DIR__ . '/../config/db.php';      // starts the session + $conn
+include __DIR__ . '/../config/db.php';      // dapat may $conn at $MOCEAN_TOKEN dito
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
@@ -13,22 +13,20 @@ function json_fail($msg, $code = 400){
 
 $raw = file_get_contents("php://input");
 if ($raw === false) json_fail("No input");
-
 $payload = json_decode($raw, true);
 if (!is_array($payload)) json_fail("Invalid JSON body");
 
 $action = $payload['action_type'] ?? ($payload['action'] ?? null);
 $student_ids = $payload['student_ids'] ?? null;
+$send_sms = !empty($payload['send_sms']);   // true => talagang magpadala; else preview lang
 
-/* Normalize / map synonyms */
+/* Normalize / map */
 if ($action === 'out') $action = 'out_time';
 
 $ALLOWED = [
   'attendance','restroom','snack','lunch_break','water_break',
-  'not_well','borrow_book','return_material',
-  'participated','help_request','out_time'
+  'not_well','borrow_book','return_material','participated','help_request','out_time'
 ];
-
 if (!$action || !in_array($action, $ALLOWED, true)) {
   json_fail("Invalid action_type. Allowed: ".implode(", ", $ALLOWED));
 }
@@ -36,77 +34,93 @@ if (!is_array($student_ids) || count($student_ids) === 0) {
   json_fail("student_ids must be a non-empty array");
 }
 
-/** Helper: normalize PH numbers to E.164 63XXXXXXXXXX; return null if invalid */
+/* --- Helpers --- */
+// E.164 normalizer for PH numbers; returns "63XXXXXXXXXX" or null if invalid
 function normalizePH($msisdn){
+  if ($msisdn === null) return null;
   $s = trim((string)$msisdn);
   if ($s === '') return null;
-  // keep + for detection then strip non-digits
   $hasPlus = str_starts_with($s, '+');
   $digits  = preg_replace('/\D+/', '', $s);
 
-  // +63XXXXXXXXXX or 63XXXXXXXXXX (12 digits)
+  // +63XXXXXXXXXX or 63XXXXXXXXXX
   if ((($hasPlus && str_starts_with($s, '+63')) || str_starts_with($digits,'63')) && strlen($digits) === 12) {
     return '63' . substr($digits, 2);
   }
-  // 09XXXXXXXXX (11 digits) -> 63XXXXXXXXXX
+  // 09XXXXXXXXX -> 63XXXXXXXXXX
   if (str_starts_with($digits, '0') && strlen($digits) === 11) {
     return '63' . substr($digits, 1);
   }
-  // 9XXXXXXXXX (10 digits) -> 63XXXXXXXXXX
+  // 9XXXXXXXXX -> 63XXXXXXXXXX
   if (strlen($digits) === 10 && str_starts_with($digits,'9')) {
     return '63' . $digits;
   }
   return null;
 }
 
+function mocean_send_sms(string $token, string $to, string $text): array {
+  $url  = "https://rest.moceanapi.com/rest/2/sms";
+  $data = [
+    'mocean-from'        => 'MySchoolness', // alphanumeric sender; kung hindi dumarating, gumamit ng numeric long number
+    'mocean-to'          => $to,
+    'mocean-text'        => $text,
+    'mocean-resp-format' => 'JSON',
+    // 'mocean-dlr-url'   => 'https://myschoolness.site/dlr.php',
+    // 'mocean-dlr-mask'  => 1,
+  ];
+  $ch = curl_init($url);
+  curl_setopt_array($ch, [
+    CURLOPT_POST           => true,
+    CURLOPT_POSTFIELDS     => http_build_query($data),
+    CURLOPT_HTTPHEADER     => [
+      "Authorization: Bearer {$token}",
+      "Content-Type: application/x-www-form-urlencoded",
+    ],
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT        => 15,
+  ]);
+  $res  = curl_exec($ch);
+  $err  = curl_error($ch);
+  $http = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+  curl_close($ch);
+
+  if ($err) return ['ok'=>false,'error'=>$err,'http'=>$http];
+  $json = json_decode($res, true);
+  return ['ok'=>true,'http'=>$http,'body'=>$json ?? $res];
+}
+
+/* --- Main --- */
 try {
   $conn->begin_transaction();
 
-  // 1) Insert behavior logs (same as your version)
+  // 1) Log behavior (unchanged)
   $stmt = $conn->prepare("INSERT INTO behavior_logs (student_id, action_type) VALUES (?, ?)");
-  if (!$stmt) {
-    $conn->rollback();
-    json_fail("DB prepare failed: ".$conn->error, 500);
-  }
-
+  if (!$stmt) { $conn->rollback(); json_fail("DB prepare failed: ".$conn->error, 500); }
   $inserted = 0;
   foreach ($student_ids as $sid) {
     $sid = intval($sid);
     $stmt->bind_param("is", $sid, $action);
-    if (!$stmt->execute()) {
-      $stmt->close();
-      $conn->rollback();
-      json_fail("DB insert error: ".$conn->error, 500);
-    }
+    if (!$stmt->execute()) { $stmt->close(); $conn->rollback(); json_fail("DB insert error: ".$conn->error, 500); }
     $inserted++;
   }
   $stmt->close();
 
-  // 2) If OUT TIME: fetch parents + numbers (no SMS yet — just preview)
+  // 2) Preview recipients kung OUT TIME
   $recipients = [];
   if ($action === 'out_time') {
-    // Safe IN (...) with placeholders
     $ids = array_map('intval', $student_ids);
-    $placeholders = implode(',', array_fill(0, count($ids), '?'));
-
+    $ph = implode(',', array_fill(0, count($ids), '?'));
     $sql = "
-      SELECT s.student_id,
-             s.fullname       AS student_name,
-             p.parent_id,
-             p.fullname       AS parent_name,
-             p.mobile_number  AS parent_mobile
+      SELECT s.student_id, s.fullname AS student_name,
+             p.parent_id, p.fullname AS parent_name, p.mobile_number AS parent_mobile
       FROM students s
       LEFT JOIN parents p ON p.parent_id = s.parent_id
-      WHERE s.student_id IN ($placeholders)
+      WHERE s.student_id IN ($ph)
     ";
-    $tp = str_repeat('i', count($ids));
     $stmt2 = $conn->prepare($sql);
-    if (!$stmt2) {
-      $conn->rollback();
-      json_fail("DB prepare (join) failed: ".$conn->error, 500);
-    }
-    // bind the dynamic IN list
-    $stmt2->bind_param($tp, ...$ids);
+    if (!$stmt2) { $conn->rollback(); json_fail("DB prepare (join) failed: ".$conn->error, 500); }
+    $types = str_repeat('i', count($ids));
+    $stmt2->bind_param($types, ...$ids);
     $stmt2->execute();
     $res = $stmt2->get_result();
 
@@ -119,22 +133,87 @@ try {
         "parent_id"    => $row['parent_id'] ? (int)$row['parent_id'] : null,
         "parent_name"  => $row['parent_name'] ?? null,
         "mobile_raw"   => $raw,
-        "mobile_e164"  => $norm,            // null if invalid/unavailable
-        "can_notify"   => $norm !== null
+        "mobile_e164"  => $norm,
+        "can_notify"   => ($row['parent_id'] !== null) && ($norm !== null) // <-- may parent at valid # lang
       ];
     }
     $stmt2->close();
   }
 
-  $conn->commit();
-
-  echo json_encode([
-    "ok"        => true,
-    "inserted"  => $inserted,
+  // 3) Kung send_sms=true: magpadala lang sa can_notify==true
+  $result = [
+    "ok" => true,
+    "inserted" => $inserted,
     "action_type" => $action,
-    // only present for out_time previews:
     "recipients_preview" => $recipients
-  ], JSON_UNESCAPED_UNICODE);
+  ];
+
+  if ($action === 'out_time' && $send_sms) {
+    // siguraduhing meron tayong token
+    if (!isset($MOCEAN_TOKEN) || !$MOCEAN_TOKEN) {
+      $conn->commit();
+      $result["ok"] = false;
+      $result["message"] = "MOCEAN_TOKEN is missing in config.";
+      echo json_encode($result, JSON_UNESCAPED_UNICODE);
+      exit;
+    }
+
+    $template = "Hi, this is MySchoolness. Your child {student} has checked OUT from class.";
+    $sent = []; $failed = [];
+
+    foreach ($recipients as $r) {
+      if (!$r['can_notify']) continue; // <-- skip walang parent / invalid #
+      $text = str_replace('{student}', $r['student_name'], $template);
+      $resp = mocean_send_sms($MOCEAN_TOKEN, $r['mobile_e164'], $text);
+
+      $msgid  = $resp['body']['messages'][0]['message-id'] ?? null;
+      $status = $resp['body']['messages'][0]['status'] ?? null;
+
+      // optional: log to table sms_logs kung meron
+      if (isset($conn)) {
+        $stmt3 = $conn->prepare("CREATE TABLE IF NOT EXISTS sms_logs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            student_id INT NULL,
+            parent_id INT NULL,
+            to_e164 VARCHAR(20) NOT NULL,
+            message TEXT NOT NULL,
+            provider VARCHAR(20) DEFAULT 'mocean',
+            provider_msgid VARCHAR(64) NULL,
+            status VARCHAR(32) NULL,
+            http_code INT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )");
+        if ($stmt3) { $stmt3->execute(); $stmt3->close(); }
+
+        $stmt4 = $conn->prepare("INSERT INTO sms_logs (student_id,parent_id,to_e164,message,provider,provider_msgid,status,http_code)
+                                 VALUES (?,?,?,?,?,?,?,?)");
+        if ($stmt4) {
+          $prov = 'mocean';
+          $http = $resp['http'] ?? null;
+          $sid = $r['student_id']; $pid = $r['parent_id'];
+          $stmt4->bind_param("iissssii", $sid, $pid, $r['mobile_e164'], $text, $prov, $msgid, $status, $http);
+          $stmt4->execute(); $stmt4->close();
+        }
+      }
+
+      if ($resp['ok'] && $status === '0') {
+        $sent[] = $r['mobile_e164'];
+      } else {
+        $failed[] = [
+          'to' => $r['mobile_e164'],
+          'error' => $resp['error'] ?? ($resp['body'] ?? 'unknown')
+        ];
+      }
+    }
+
+    $result["sent_count"]   = count($sent);
+    $result["failed_count"] = count($failed);
+    $result["sent_to"]      = $sent;
+    $result["failed"]       = $failed;
+  }
+
+  $conn->commit();
+  echo json_encode($result, JSON_UNESCAPED_UNICODE);
 
 } catch (Throwable $e) {
   if ($conn && $conn->errno) { @ $conn->rollback(); }
