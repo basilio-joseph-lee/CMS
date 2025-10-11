@@ -193,7 +193,6 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
   <!-- Toast -->
   <div id="toast" class="fixed top-5 right-5 px-4 py-3 rounded-xl shadow text-white font-bold hidden"></div>
 
-  <script>
 <script>
   // Toast helper
   const toastBox = document.createElement('div');
@@ -294,6 +293,5 @@ $yearLabel   = $_SESSION['year_label'] ?? '';
   setInterval(fetchPending, 5000);
 </script>
 
-  </script>
 </body>
 </html>
