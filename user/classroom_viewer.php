@@ -6,12 +6,9 @@
  */
 
 session_start();
-if (!isset($_SESSION['teacher_id'])) {
-  header("Location: teacher_login.php");
-  exit;
-}
 
-$teacherName   = $_SESSION['teacher_fullname'] ?? 'Teacher';
+// This viewer is PUBLIC/READ-ONLY — no login required.
+$teacherName   = $_SESSION['teacher_fullname'] ?? 'Guest Viewer';
 $subject_id     = intval($_SESSION['subject_id'] ?? 0);
 $advisory_id    = intval($_SESSION['advisory_id'] ?? 0);
 $school_year_id = intval($_SESSION['school_year_id'] ?? 0);
