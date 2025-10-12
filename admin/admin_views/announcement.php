@@ -1,56 +1,27 @@
 <?php
-// admin_announcements.php  —  Admin can post announcements (optionally blast SMS to parents)
-// Per request: no session/login guard here.
-if (session_status() === PHP_SESSION_NONE) session_start();
+// admin_announcements.php
+// NOTE: per request, no session/login guard here.
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
 require_once dirname(__DIR__, 2) . '/config/db.php';
-/*
- * sms.php is optional but recommended. It should expose:
- *   function send_sms(string $to, string $text): array  // ['ok'=>bool,'http'=>int,'body'=>mixed]
- * If it's missing, we will still run and show a clear message.
- */
-$HAS_SMS_HELPER = @include_once dirname(__DIR__, 2) . '/config/sms.php';
+require_once dirname(__DIR__, 2) . '/config/sms.php'; // <-- Mocean helper (send_sms, ph_e164)
 
 $conn->set_charset('utf8mb4');
 
-/* ---------------- Small helpers ---------------- */
-function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
-function postv($k, $d=null){ return $_POST[$k] ?? $d; }
-function getv($k, $d=null){ return $_GET[$k] ?? $d; }
+// Helpers
+if (!function_exists('h')) { function h($s){ return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); } }
+if (!function_exists('postv')) { function postv($k, $d=null){ return $_POST[$k] ?? $d; } }
+if (!function_exists('getv')) { function getv($k, $d=null){ return $_GET[$k] ?? $d; } }
 
-/* Phone normalizer: 09XXXXXXXXX / 9XXXXXXXXX / +63XXXXXXXXXX -> 63XXXXXXXXXX */
-function ph_e164_no_plus(?string $raw): ?string {
-  if ($raw === null) return null;
-  $s = trim($raw);
-  if ($s === '') return null;
-  $hasPlus = str_starts_with($s, '+');
-  $digits  = preg_replace('/\D+/', '', $s);
-
-  // +63xxxxxxxxxx or 63xxxxxxxxxx
-  if ((($hasPlus && str_starts_with($s, '+63')) || str_starts_with($digits, '63')) && strlen($digits) === 12) {
-    return '63' . substr($digits, 2);
-  }
-  // 09xxxxxxxxx
-  if (str_starts_with($digits, '0') && strlen($digits) === 11) {
-    return '63' . substr($digits, 1);
-  }
-  // 9xxxxxxxxx
-  if (strlen($digits) === 10 && str_starts_with($digits, '9')) {
-    return '63' . $digits;
-  }
-  return null;
-}
-
-/* ------------- Active School Year ------------- */
+/* -------------------- Active School Year -------------------- */
 $sy = $conn->query("SELECT school_year_id, year_label FROM school_years WHERE status='active' LIMIT 1");
 if ($sy->num_rows === 0) { die('No active school year set.'); }
-$ACTIVE_SY       = $sy->fetch_assoc();
-$ACTIVE_SY_ID    = (int)$ACTIVE_SY['school_year_id'];
+$ACTIVE_SY = $sy->fetch_assoc();
+$ACTIVE_SY_ID = (int)$ACTIVE_SY['school_year_id'];
 $ACTIVE_SY_LABEL = $ACTIVE_SY['year_label'];
 
-/* ------------- Sections for this SY ------------- */
+/* -------------------- Sections (active SY) -------------------- */
 $sections = [];
 $sec = $conn->prepare("SELECT advisory_id, class_name FROM advisory_classes WHERE school_year_id=? ORDER BY class_name ASC");
 $sec->bind_param("i", $ACTIVE_SY_ID);
@@ -59,7 +30,7 @@ $r = $sec->get_result();
 while($row = $r->fetch_assoc()){ $sections[] = $row; }
 $sec->close();
 
-/* ------------- Subjects (grouped) ------------- */
+/* -------------------- Subjects + group by name (dedupe) -------------------- */
 $subjectsByAdvisory = []; // advisory_id => [{subject_id, subject_name}]
 $subjectsGroup = [];      // subject_name => [subject_id,...]
 $sub = $conn->prepare("SELECT subject_id, advisory_id, subject_name FROM subjects WHERE school_year_id=? ORDER BY subject_name ASC");
@@ -79,10 +50,11 @@ while($row = $rs->fetch_assoc()){
 }
 $sub->close();
 
-/* ------------- Fetch parent mobiles for admin ------------- */
+/* -------------------- SMS target fetcher -------------------- */
 /**
- * Returns DISTINCT parent mobile numbers (raw) for a section,
- * optionally limited to a subject in this SY.
+ * Returns DISTINCT parent mobile numbers (raw as saved) for a section,
+ * optionally filtered by subject, in the given school year.
+ * - If $subjectId is null, sends to ALL students in the section for that SY.
  */
 function fetch_parent_mobiles_for_admin(mysqli $conn, int $advisoryId, ?int $subjectId, int $schoolYearId): array {
   if ($subjectId) {
@@ -117,7 +89,7 @@ function fetch_parent_mobiles_for_admin(mysqli $conn, int $advisoryId, ?int $sub
   return $out;
 }
 
-/* ------------- Redirect helper ------------- */
+/* -------------------- Redirect helper -------------------- */
 function redirect_with_toast($type, $msg = '', $extra = []) {
   $qs = $_GET;
   $qs['page'] = 'announcement';
@@ -130,30 +102,29 @@ function redirect_with_toast($type, $msg = '', $extra = []) {
 }
 function toast_redirect($type, $msg = '', $extra = []) { redirect_with_toast($type, $msg, $extra); }
 
-/* ------------- CREATE (multi-section; admin post = teacher_id NULL) ------------- */
+/* -------------------- CREATE (multi-section; admin post = teacher_id NULL) -------------------- */
 if (isset($_POST['create_announcement'])) {
-  $title               = trim(postv('title',''));
-  $message             = trim(postv('message',''));
-  $visible_until       = postv('visible_until') ?: null;
-  $subject_name_for_all= postv('subject_name_all', ''); // optional
-  $class_ids           = $_POST['class_ids'] ?? [];
-  $preview             = isset($_GET['sms_preview']) || isset($_POST['sms_preview']);
-  $debugFlag           = isset($_GET['sms_debug']) || isset($_POST['sms_debug']);
+  $title = trim(postv('title',''));
+  $message = trim(postv('message',''));
+  $visible_until = postv('visible_until') ?: null;
+  $subject_name_for_all = postv('subject_name_all', ''); // optional
+  $class_ids = $_POST['class_ids'] ?? [];
 
   if ($title === '' || $message === '' || !is_array($class_ids) || count($class_ids)===0) {
     toast_redirect('error','Missing title/message/section(s).');
   }
 
-  $stmtWith    = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until) VALUES (NULL, ?, ?, ?, ?, ?)");
+  // Insert announcements per section (with or without subject mapping)
+  $stmtWith = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until) VALUES (NULL, ?, ?, ?, ?, ?)");
   $stmtWithout = $conn->prepare("INSERT INTO announcements (teacher_id, subject_id, class_id, title, message, visible_until) VALUES (NULL, NULL, ?, ?, ?, ?)");
 
-  // Build candidate mobiles
-  $rawMobiles = [];
+  // Build SMS list across all selected sections (dedup later)
+  $allMobiles = [];
 
   foreach ($class_ids as $cid) {
     $cid = (int)$cid;
 
-    // subject_name -> subject_id (per section)
+    // map subject name -> subject_id for this section (if provided)
     $subject_id = null;
     if ($subject_name_for_all !== '' && isset($subjectsByAdvisory[$cid])) {
       foreach ($subjectsByAdvisory[$cid] as $s) {
@@ -161,7 +132,7 @@ if (isset($_POST['create_announcement'])) {
       }
     }
 
-    // Insert announcement
+    // INSERT announcement row
     if ($subject_id === null) {
       $stmtWithout->bind_param("isss", $cid, $title, $message, $visible_until);
       $stmtWithout->execute();
@@ -170,108 +141,36 @@ if (isset($_POST['create_announcement'])) {
       $stmtWith->execute();
     }
 
-    // collect parents to SMS (whole section if no subject_id)
-    $mobs = fetch_parent_mobiles_for_admin($conn, $cid, $subject_id, $ACTIVE_SY_ID);
-    if (!empty($mobs)) $rawMobiles = array_merge($rawMobiles, $mobs);
+    // Gather parent numbers for SMS
+    $mobiles = fetch_parent_mobiles_for_admin($conn, $cid, $subject_id, $ACTIVE_SY_ID);
+    if (!empty($mobiles)) $allMobiles = array_merge($allMobiles, $mobiles);
   }
   $stmtWith->close();
   $stmtWithout->close();
 
-  // Normalize & dedup
-  $toSend = [];
-  foreach ($rawMobiles as $m) {
-    $norm = ph_e164_no_plus($m);
-    if ($norm) $toSend[$norm] = true;
-  }
-  $toSend = array_keys($toSend);
+  // Dedup mobile numbers
+  $allMobiles = array_values(array_unique($allMobiles));
 
-  // Preview: don’t send; just show count & dump list to console
-  if ($preview) {
-    $_SESSION['sms_debug_admin'] = ['preview_list'=>$toSend, 'sms_text'=>"From Admin: ".mb_substr($title,0,60)." — ".mb_substr($message,0,100)];
-    toast_redirect('created', 'Posted to '.count($class_ids).' section(s). (Preview only)', ['sms_sent'=>0,'sms_failed'=>0]);
-  }
-
-  // If sms helper not available, bail out cleanly
-  if (!$HAS_SMS_HELPER) {
-    toast_redirect('created', 'Posted to '.count($class_ids).' section(s). (SMS helper missing — no SMS sent)');
-  }
-
-  // Compose message
+  // Compose SMS (from “Admin”)
   $smsText = "From Admin: " . mb_substr($title, 0, 60) . " — " . mb_substr($message, 0, 100);
 
-  // Ensure sms_logs table exists
-  $conn->query("CREATE TABLE IF NOT EXISTS sms_logs (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      student_id INT NULL,
-      parent_id INT NULL,
-      to_e164 VARCHAR(20) NOT NULL,
-      message TEXT NOT NULL,
-      provider VARCHAR(20) DEFAULT 'semaphore',
-      provider_msgid VARCHAR(64) NULL,
-      status VARCHAR(32) NULL,
-      http_code INT NULL,
-      provider_error TEXT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )");
-
+  // Send and count
   $okCount = 0; $failCount = 0;
-  $debug   = [];
-
-  foreach ($toSend as $msisdn) {
-    // Call helper: expected to return ['ok'=>bool,'http'=>int,'body'=>mixed]
-    $resp = send_sms($msisdn, $smsText);
-    $debug[] = ['to'=>$msisdn, 'resp'=>$resp];
-
-    // parse generic fields for logging
-    $ok   = (bool)($resp['ok'] ?? false);
-    $http = $resp['http'] ?? null;
-    $body = $resp['body'] ?? null;
-
-    $msgid  = null;
-    $status = null;
-    $perr   = null;
-
-    // Try to understand common providers’ JSON
-    if (is_array($body)) {
-      // Semaphore: { "status":"success","message_id":"...", ... } OR { "status":"failed","message":"..." }
-      if (isset($body['status'])) {
-        $status = (string)$body['status'];
-        $msgid  = $body['message_id'] ?? ($body['messageId'] ?? null);
-        if (!$ok && isset($body['message'])) $perr = (string)$body['message'];
-      }
-      // Mocean: { "messages":[{"status":"0","message-id": "..."}] }
-      if (isset($body['messages'][0])) {
-        $m0 = $body['messages'][0];
-        $status = $m0['status'] ?? $status;
-        $msgid  = $m0['message-id'] ?? $msgid;
-      }
-    } elseif (is_string($body)) {
-      // plain string error
-      if (!$ok) $perr = $body;
-    }
-
-    $stmtL = $conn->prepare("INSERT INTO sms_logs (student_id,parent_id,to_e164,message,provider,provider_msgid,status,http_code,provider_error)
-                             VALUES (NULL,NULL,?,?,?,?,?,?,?)");
-    $prov = 'semaphore'; // or detect if your send_sms uses Mocean etc.
-    $stmtL->bind_param("sssssis", $msisdn, $smsText, $prov, $msgid, $status, $http, $perr);
-    $stmtL->execute();
-    $stmtL->close();
-
-    if ($ok) $okCount++; else $failCount++;
-
-    // Gentle throttle to avoid rate limits (adjust as needed)
-    usleep(150000); // 0.15s
+  $debugPack = [];
+  foreach ($allMobiles as $msisdn) {
+    $r = send_sms($msisdn, $smsText);
+    $debugPack[] = $r;
+    if ($r['ok']) $okCount++; else $failCount++;
   }
-
-  if ($debugFlag) $_SESSION['sms_debug_admin'] = $debug;
+  $_SESSION['sms_debug_admin'] = $debugPack;
 
   toast_redirect('created', 'Posted to '.count($class_ids).' section(s).', [
-    'sms_sent'   => $okCount,
+    'sms_sent' => $okCount,
     'sms_failed' => $failCount
   ]);
 }
 
-/* ------------- DELETE ------------- */
+/* -------------------- DELETE -------------------- */
 if (isset($_POST['delete_announcement'], $_POST['id'])) {
   $id = (int)$_POST['id'];
   $d = $conn->prepare("DELETE FROM announcements WHERE id=?");
@@ -280,19 +179,20 @@ if (isset($_POST['delete_announcement'], $_POST['id'])) {
   toast_redirect('deleted');
 }
 
-/* ------------- UPDATE (single row) ------------- */
+/* -------------------- UPDATE (single row) -------------------- */
 if (isset($_POST['update_announcement'], $_POST['id'])) {
-  $id            = (int)$_POST['id'];
-  $title         = trim(postv('title',''));
-  $message       = trim(postv('message',''));
+  $id = (int)$_POST['id'];
+  $title = trim(postv('title',''));
+  $message = trim(postv('message',''));
   $visible_until = postv('visible_until') ?: null;
-  $class_id      = (int)postv('class_id');
-  $subject_name  = postv('subject_name', '');
+  $class_id = (int)postv('class_id');
+  $subject_name = postv('subject_name', '');
 
   if ($title === '' || $message === '' || !$class_id) {
     toast_redirect('error','Missing title/message/section.');
   }
 
+  // map subject_name -> subject_id under this class (if provided)
   $subject_id = null;
   if ($subject_name !== '' && isset($subjectsByAdvisory[$class_id])) {
     foreach ($subjectsByAdvisory[$class_id] as $s) {
@@ -311,24 +211,21 @@ if (isset($_POST['update_announcement'], $_POST['id'])) {
   toast_redirect('updated');
 }
 
-/* ------------- Filters ------------- */
-$flt_section      = getv('section','');            // advisory_id
-$flt_subject_name = getv('subject_name','');       // subject_name
+/* -------------------- Filters (deduped subject by NAME) -------------------- */
+$flt_section = getv('section','');            // advisory_id
+$flt_subject_name = getv('subject_name','');  // subject_name (not id)
 
 $where = " WHERE ac.school_year_id = ".$ACTIVE_SY_ID." ";
 $params = [];
-if ($flt_section !== '') {
-  $where .= " AND a.class_id = ? ";
-  $params[] = (int)$flt_section;
-}
+if ($flt_section !== '') { $where .= " AND a.class_id = ? "; $params[] = (int)$flt_section; }
 if ($flt_subject_name !== '' && isset($subjectsGroup[$flt_subject_name])) {
-  $ids = $subjectsGroup[$flt_subject_name];
+  $ids = $subjectsGroup[$flt_subject_name]; // all subject_id that share the same name
   $placeholders = implode(',', array_fill(0, count($ids), '?'));
   $where .= " AND a.subject_id IN ($placeholders) ";
   $params = array_merge($params, $ids);
 }
 
-/* ------------- List ------------- */
+/* -------------------- List (prepared) -------------------- */
 $sql = "
   SELECT a.*, ac.class_name, s.subject_name, t.fullname AS teacher_name
   FROM announcements a
@@ -349,8 +246,8 @@ $rows = [];
 while($row = $list->fetch_assoc()){ $rows[] = $row; }
 $stmt->close();
 
-/* ------------- Toast text ------------- */
-$toast='';
+/* -------------------- Toast map -------------------- */
+$toast=''; $smsBanner='';
 if (isset($_GET['success'])) {
   $map = [
     'created' => 'Announcement posted successfully!',
@@ -360,6 +257,11 @@ if (isset($_GET['success'])) {
   ];
   $toast = $map[$_GET['success']] ?? '';
 }
+$sent  = isset($_GET['sms_sent'])   ? (int)$_GET['sms_sent']   : null;
+$fail  = isset($_GET['sms_failed']) ? (int)$_GET['sms_failed'] : null;
+// if ($sent !== null || $fail !== null) {
+//   $smsBanner = "SMS sent to ".(int)$sent." parent(s), failed: ".(int)$fail;
+// }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -374,7 +276,10 @@ if (isset($_GET['success'])) {
   @keyframes fadeIn{from{opacity:.0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}
   .truncate-2 { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
   .icon-btn { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:8px; }
-  @media (max-width: 1024px) {.table-auto { display:block; overflow-x:auto; white-space:nowrap; }}
+
+  @media (max-width: 1024px) {
+    .table-auto { display:block; overflow-x:auto; white-space:nowrap; }
+  }
   @media (max-width: 640px) {
     table thead { display:none; }
     table, table tbody, table tr, table td { display:block; width:100%; }
@@ -386,12 +291,13 @@ if (isset($_GET['success'])) {
 </head>
 <body class="bg-gray-50">
 <div class="max-w-6xl mx-auto px-6 py-6">
-
+  <!-- Header -->
   <div class="flex items-center justify-between mb-4">
     <div></div>
     <button class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700" onclick="openCreate()">＋ New Announcement</button>
   </div>
 
+  <!-- Filters -->
   <form method="GET" class="bg-white rounded-xl shadow p-4 mb-4">
     <input type="hidden" name="page" value="announcement">
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -429,6 +335,12 @@ if (isset($_GET['success'])) {
     <script>setTimeout(()=>document.querySelector('.fixed.top-4')?.remove(), 2300);</script>
   <?php endif; ?>
 
+  <?php if ($smsBanner): ?>
+    <div class="fixed top-16 right-4 bg-green-600 text-white px-4 py-2 rounded-lg shadow"><?= h($smsBanner) ?></div>
+    <script>setTimeout(()=>document.querySelector('.fixed.top-16')?.remove(), 3000);</script>
+  <?php endif; ?>
+
+  <!-- Optional console dump for last send -->
   <?php if (!empty($_SESSION['sms_debug_admin'])): ?>
     <script>
       console.group('Admin SMS debug (last send)');
@@ -439,6 +351,7 @@ if (isset($_GET['success'])) {
     </script>
   <?php endif; ?>
 
+  <!-- Table -->
   <div class="bg-white rounded-xl shadow overflow-x-auto">
     <div class="overflow-y-auto" style="max-height: 400px;">
       <table class="min-w-full text-sm table-auto">
@@ -487,6 +400,7 @@ if (isset($_GET['success'])) {
                 <?= $row['visible_until'] ? date('M d, Y', strtotime($row['visible_until'])) : '—' ?>
               </td>
               <td data-label="Actions" class="px-3 py-2 text-center">
+                <!-- Edit -->
                 <button class="icon-btn mr-2 hover:bg-yellow-100" title="Edit"
                   onclick='openEdit(<?= json_encode([
                     "id"=>$row["id"],
@@ -501,6 +415,7 @@ if (isset($_GET['success'])) {
                     <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                 </button>
+                <!-- Delete -->
                 <form method="POST" class="inline" onsubmit="return confirm('Delete this announcement?')">
                   <input type="hidden" name="id" value="<?= (int)$row['id'] ?>">
                   <button name="delete_announcement" class="icon-btn hover:bg-red-100" title="Delete">
@@ -562,16 +477,6 @@ if (isset($_GET['success'])) {
           <?php endforeach; ?>
         </select>
         <p class="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple sections.</p>
-      </div>
-      <div class="flex items-center gap-3">
-        <label class="inline-flex items-center text-xs">
-          <input type="checkbox" name="sms_preview" value="1" class="mr-2">
-          Preview SMS targets (no send)
-        </label>
-        <label class="inline-flex items-center text-xs">
-          <input type="checkbox" name="sms_debug" value="1" class="mr-2">
-          Save debug to console
-        </label>
       </div>
       <div class="flex justify-end gap-2">
         <button type="button" onclick="closeCreate()" class="px-4 py-2 rounded-lg bg-gray-200 text-gray-700">Cancel</button>
