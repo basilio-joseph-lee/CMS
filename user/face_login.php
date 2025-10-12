@@ -1,8 +1,9 @@
 <?php
 /**
- * face_login.php — production-safe
- * - Consistent student session (works on localhost/CMS and on your domain)
- * - Absolute redirects so the browser never treats "user" as a domain
+ * face_login.php — production-safe (fixed network handling)
+ * - Absolute URLs (prevents "user" as hostname).
+ * - Sends/receives cookies correctly.
+ * - Clear errors if /config/login_by_student.php throws.
  */
 
 function is_https() {
@@ -46,6 +47,7 @@ unset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['advisory_id
 <head>
   <meta charset="UTF-8" />
   <title>Face Recognition Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
   <style>
@@ -58,6 +60,7 @@ unset($_SESSION['subject_id'], $_SESSION['subject_name'], $_SESSION['advisory_id
       background:#fff8a9; padding:12px 16px; border:2px solid #ccc65b; border-radius:8px;
       margin-top:20px; font-weight:bold; transform:rotate(-2deg); box-shadow:4px 4px 0 #d6d173;
       display:inline-block;
+      white-space:pre-line;
     }
   </style>
 </head>
@@ -83,6 +86,7 @@ const ORIGIN = window.location.origin;
 const LOGIN_URL  = ORIGIN + APP_BASE + '/config/login_by_student.php';
 const SELECT_URL = ORIGIN + APP_BASE + '/user/teacher/select_subject.php';
 
+// Model loading
 const MODELS_URL_PRIMARY = '../models';
 const DISTANCE_THRESHOLD = 0.6;
 const PING_MS = 900;
@@ -96,6 +100,10 @@ let stream, matcher = null, roster = [], indexByLabel = new Map();
 let scanTimer = null, ready = false;
 
 function setStatus(txt){ document.getElementById('status').textContent = txt; }
+function appendStatusLine(line){
+  const el = document.getElementById('status');
+  el.textContent = (el.textContent ? el.textContent + "\n" : "") + line;
+}
 function normalizePath(p){
   if(!p) return '';
   p = String(p).trim().replace(/^\.?\//,'');
@@ -107,13 +115,11 @@ function normalizePath(p){
 async function waitForFaceApi(){ for (let i=0;i<200;i++){ if (window.faceapi) return; await new Promise(r=>setTimeout(r,50)); } throw new Error('face-api.js failed to load'); }
 async function resolveModelsUrl() {
   const probe = (url) => fetch(url + '/face_recognition_model-weights_manifest.json', { cache: 'no-store' }).then(r => r.ok).catch(() => false);
-  // Try relative models folder first
   const rel = MODELS_URL_PRIMARY;
   if (await probe(rel)) return rel;
-  // Then absolute to app base
   const abs = ORIGIN + APP_BASE + '/models';
   if (await probe(abs)) return abs;
-  return rel; // fallback (error will show later if truly missing)
+  return rel;
 }
 async function loadModels(){
   const base = await resolveModelsUrl();
@@ -127,9 +133,8 @@ async function startCam(){
   video.srcObject = stream;
 }
 async function fetchRoster(){
-  // Try fast path: precomputed vectors
   try {
-    const r = await fetch(ORIGIN + APP_BASE + '/api/list_face_vectors.php', { method:'GET', cache:'no-store' });
+    const r = await fetch(ORIGIN + APP_BASE + '/api/list_face_vectors.php', { method:'GET', cache:'no-store', credentials:'same-origin' });
     if (r.ok) {
       const data = await r.json();
       if (data && Array.isArray(data.vectors) && data.vectors.length) {
@@ -138,16 +143,14 @@ async function fetchRoster(){
           fullname: v.fullname,
           descriptor: Array.isArray(v.descriptor) ? v.descriptor : []
         }));
-        return; // success, skip image-based fallback
+        return;
       }
     }
   } catch (e) {
     console.warn('Vector API failed, fallback to images…', e);
   }
-
-  // Fallback (old behavior)
-  const res = await fetch(ORIGIN + APP_BASE + '/api/list_faces_all.php', { method:'POST' });
-  roster = await res.json();
+  const res = await fetch(ORIGIN + APP_BASE + '/api/list_faces_all.php', { method:'POST', credentials:'same-origin' });
+  try { roster = await res.json(); } catch { roster = []; }
   if (!Array.isArray(roster)) roster = [];
 }
 
@@ -159,9 +162,10 @@ function drawBox(det, label){
   const { box } = det.detection;
   ctx.strokeStyle = 'lime'; ctx.lineWidth = 2; ctx.strokeRect(box.x, box.y, box.width, box.height);
   ctx.fillStyle='rgba(0,0,0,.6)'; const tag = String(label||'');
-  const tw = Math.min(160, ctx.measureText(tag).width + 10);
+  ctx.font='12px sans-serif';
+  const tw = Math.min(200, ctx.measureText(tag).width + 10);
   ctx.fillRect(box.x, Math.max(0, box.y-18), tw, 18);
-  ctx.fillStyle='white'; ctx.font='12px sans-serif'; ctx.fillText(tag, box.x+4, Math.max(12, box.y-4));
+  ctx.fillStyle='white'; ctx.fillText(tag, box.x+4, Math.max(12, box.y-4));
 }
 
 async function detectOneWithProfiles(img){
@@ -180,9 +184,7 @@ function toFloat32(arr){
   try { return new Float32Array(arr); } catch { return null; }
 }
 
-
 async function buildMatcher(){
-  // Fast path: use precomputed 128-float vectors if present
   const haveVectors = roster.length && roster.every(r => Array.isArray(r.descriptor));
   if (haveVectors) {
     const labeled = [];
@@ -201,7 +203,6 @@ async function buildMatcher(){
     return;
   }
 
-  // Fallback (old behavior uses images)
   const labeled = [];
   let done = 0, total = roster.length;
   for (const row of roster){
@@ -226,6 +227,50 @@ async function buildMatcher(){
   matcher = new faceapi.FaceMatcher(labeled, DISTANCE_THRESHOLD);
 }
 
+function fetchWithTimeout(url, options={}, ms=15000){
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort('timeout'), ms);
+  const opts = Object.assign({}, options, { signal: ctrl.signal });
+  return fetch(url, opts).finally(() => clearTimeout(id));
+}
+
+async function loginStudent(studentId){
+  // cache-buster to avoid proxies
+  const url = LOGIN_URL + '?_=' + Date.now();
+  const body = new URLSearchParams({ student_id: String(studentId) });
+
+  let resp, text;
+  try{
+    resp = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/x-www-form-urlencoded' },
+      body,
+      credentials: 'same-origin',   // ✅ ensure cookies are included/accepted
+      cache: 'no-store'
+    }, 20000);
+  }catch(err){
+    throw new Error('Network/timeout error (' + err + ')');
+  }
+
+  try { text = await resp.text(); } catch { text = ''; }
+
+  if (!resp.ok) {
+    // Surface PHP errors or HTML to the UI (first lines)
+    const snippet = (text || '').toString().slice(0, 500);
+    throw new Error('HTTP ' + resp.status + ' — ' + snippet);
+  }
+
+  let data;
+  try { data = JSON.parse(text); }
+  catch (e) {
+    throw new Error('Invalid JSON from server: ' + String(text).slice(0, 300));
+  }
+
+  if (!data || data.success !== true) {
+    throw new Error('Server said failed: ' + JSON.stringify(data || {}));
+  }
+  return data;
+}
 
 async function scanLoop(){
   if (!ready || !matcher) return;
@@ -247,21 +292,13 @@ async function scanLoop(){
     clearInterval(scanTimer);
 
     try{
-      const body = new URLSearchParams({ student_id: String(meta.id) });
-      const res  = await fetch(LOGIN_URL, {
-        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
-      }).then(r=>r.json());
-
-      if (res && res.success){
-        // Use an ABSOLUTE URL so the browser never treats "user" as a hostname.
-        window.location.replace(SELECT_URL);
-      } else {
-        setStatus('⚠️ Login failed on server. Retrying…');
-        scanTimer = setInterval(scanLoop, PING_MS);
-      }
+      const res  = await loginStudent(meta.id);
+      appendStatusLine('✔ Logged in. Redirecting…');
+      // Absolute URL so the browser never treats "user" as a hostname.
+      window.location.replace(SELECT_URL);
     } catch(e) {
       console.error(e);
-      setStatus('❌ Network/login error.');
+      setStatus('❌ Login error:\n' + e.message);
       scanTimer = setInterval(scanLoop, PING_MS);
     }
   } else {
