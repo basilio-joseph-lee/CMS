@@ -4,7 +4,7 @@ session_start(); // keep this, we will re-send cookie below
 
 header('Content-Type: application/json; charset=utf-8');
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-date_default_timezone_set('Asia/Manila'); // ensure “today” checks match PH time
+date_default_timezone_set('Asia/Manila'); // ensure per-day checks match PH time
 
 // Helpers to mirror face_login.php
 function is_https() {
@@ -50,15 +50,9 @@ try {
   }
 
   /* ------------------------------------------------------------------------
-     2) Resolve context (REQUIRED): school_year_id, advisory_id, subject_id
+     2) Resolve enrollment context (REQUIRED): school_year_id, advisory_id
         - Prefer ACTIVE school year; if none, fallback to most recent
-        - Pick any subject for that advisory & school year
   ------------------------------------------------------------------------ */
-  $school_year_id = 0;
-  $advisory_id    = 0;
-  $subject_id     = 0;
-
-  // Active or latest enrollment
   $q = "
     SELECT e.advisory_id, e.school_year_id
     FROM student_enrollments e
@@ -74,7 +68,6 @@ try {
   $stmt->close();
 
   if (!$en) {
-    // No enrollment → we cannot safely insert attendance tied to FKs
     echo json_encode([
       'success'=>false,
       'error'=>'No enrollment found for this student (cannot mark attendance).'
@@ -85,32 +78,65 @@ try {
   $advisory_id    = (int)$en['advisory_id'];
   $school_year_id = (int)$en['school_year_id'];
 
-  // Any subject under that advisory & school year
-  $qs = "
-    SELECT subject_id
-    FROM subjects
-    WHERE advisory_id = ? AND school_year_id = ?
-    ORDER BY subject_id DESC
+  /* ------------------------------------------------------------------------
+     3) Resolve SUBJECT (per-subject attendance)
+        Try to find the subject that is CURRENTLY ongoing for this advisory & SY
+        based on schedule_timeblocks (day-of-week + current time).
+        If none is found, fall back to any subject under advisory & SY.
+  ------------------------------------------------------------------------ */
+  $subject_id = 0;
+
+  // Current weekday number: 1=Mon ... 7=Sun, match your schedule_timeblocks day encoding
+  $dow     = (int)date('N');
+  $nowTime = date('H:i:s');
+
+  // Attempt to pick subject by live schedule
+  $qsLive = "
+    SELECT st.subject_id
+    FROM schedule_timeblocks st
+    JOIN subjects s ON s.subject_id = st.subject_id
+    WHERE s.advisory_id = ?
+      AND s.school_year_id = ?
+      AND st.day_of_week = ?
+      AND ? BETWEEN st.start_time AND st.end_time
+    ORDER BY st.subject_id DESC
     LIMIT 1
   ";
-  $stmt = $conn->prepare($qs);
-  $stmt->bind_param("ii", $advisory_id, $school_year_id);
+  $stmt = $conn->prepare($qsLive);
+  $stmt->bind_param("iiis", $advisory_id, $school_year_id, $dow, $nowTime);
   $stmt->execute();
-  $sub = $stmt->get_result()->fetch_assoc();
+  $live = $stmt->get_result()->fetch_assoc();
   $stmt->close();
 
-  if (!$sub) {
-    echo json_encode([
-      'success'=>false,
-      'error'=>'No subject found for the student’s advisory & school year (cannot mark attendance).'
-    ]);
-    exit;
+  if ($live) {
+    $subject_id = (int)$live['subject_id'];
+  } else {
+    // Fallback: pick any subject tied to this advisory & school year
+    $qsAny = "
+      SELECT subject_id
+      FROM subjects
+      WHERE advisory_id = ? AND school_year_id = ?
+      ORDER BY subject_id DESC
+      LIMIT 1
+    ";
+    $stmt = $conn->prepare($qsAny);
+    $stmt->bind_param("ii", $advisory_id, $school_year_id);
+    $stmt->execute();
+    $sub = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$sub) {
+      echo json_encode([
+        'success'=>false,
+        'error'=>'No subject found for the student’s advisory & school year (cannot mark attendance).'
+      ]);
+      exit;
+    }
+    $subject_id = (int)$sub['subject_id'];
   }
 
-  $subject_id = (int)$sub['subject_id'];
-
   /* ------------------------------------------------------------------------
-     3) Login session
+     4) Login session
   ------------------------------------------------------------------------ */
   session_regenerate_id(true);
 
@@ -140,8 +166,8 @@ try {
   ]);
 
   /* ------------------------------------------------------------------------
-     4) Attendance write-on-login (one mark per day per student)
-        - Duplicate guard: student_id + DATE(timestamp)
+     5) Attendance write-on-login (per-subject, once per day)
+        Duplicate guard: student_id + subject_id + DATE(timestamp)
   ------------------------------------------------------------------------ */
   $today = date('Y-m-d');
 
@@ -149,10 +175,11 @@ try {
     SELECT COUNT(*) AS cnt
     FROM attendance_records
     WHERE student_id = ?
+      AND subject_id = ?
       AND DATE(`timestamp`) = ?
     LIMIT 1
   ");
-  $chk->bind_param("is", $student_id, $today);
+  $chk->bind_param("iis", $student_id, $subject_id, $today);
   $chk->execute();
   $already = (int)$chk->get_result()->fetch_assoc()['cnt'];
   $chk->close();
@@ -188,7 +215,6 @@ try {
   exit;
 
 } catch (Throwable $e) {
-  // Helpful error for debugging on prod too
   http_response_code(500);
   echo json_encode([
     'success'=>false,
