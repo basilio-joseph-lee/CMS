@@ -35,48 +35,57 @@ if ($student_id <= 0) {
 require_once __DIR__ . '/db.php';
 $conn->set_charset('utf8mb4');
 
-/* --------------------------------------------------------------------------
-   1) Validate student
--------------------------------------------------------------------------- */
-$stmt = $conn->prepare("SELECT student_id, fullname, gender, avatar_path, face_image_path FROM students WHERE student_id=? LIMIT 1");
-$stmt->bind_param("i", $student_id);
-$stmt->execute();
-$row = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+try {
+  /* ------------------------------------------------------------------------
+     1) Validate student
+  ------------------------------------------------------------------------ */
+  $stmt = $conn->prepare("SELECT student_id, fullname, gender, avatar_path, face_image_path FROM students WHERE student_id=? LIMIT 1");
+  $stmt->bind_param("i", $student_id);
+  $stmt->execute();
+  $row = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
 
-if (!$row) {
-  echo json_encode(['success'=>false,'error'=>'Student not found']); exit;
-}
+  if (!$row) {
+    echo json_encode(['success'=>false,'error'=>'Student not found']); exit;
+  }
 
-/* --------------------------------------------------------------------------
-   2) Build context (active school year + advisory + subject best-effort)
-      - We derive the student's advisory & active SY from student_enrollments
-      - We pick any subject under that advisory & SY (or fallback to 0)
--------------------------------------------------------------------------- */
-$school_year_id = 0;
-$advisory_id    = 0;
-$subject_id     = 0;
+  /* ------------------------------------------------------------------------
+     2) Resolve context (REQUIRED): school_year_id, advisory_id, subject_id
+        - Prefer ACTIVE school year; if none, fallback to most recent
+        - Pick any subject for that advisory & school year
+  ------------------------------------------------------------------------ */
+  $school_year_id = 0;
+  $advisory_id    = 0;
+  $subject_id     = 0;
 
-// Get active enrollment (prefers active school year)
-$q = "
-  SELECT e.advisory_id, e.school_year_id
-  FROM student_enrollments e
-  JOIN school_years y ON y.school_year_id = e.school_year_id
-  WHERE e.student_id = ?
-  ORDER BY (y.status='active') DESC, e.school_year_id DESC
-  LIMIT 1
-";
-$stmt = $conn->prepare($q);
-$stmt->bind_param("i", $student_id);
-$stmt->execute();
-$en = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+  // Active or latest enrollment
+  $q = "
+    SELECT e.advisory_id, e.school_year_id
+    FROM student_enrollments e
+    JOIN school_years y ON y.school_year_id = e.school_year_id
+    WHERE e.student_id = ?
+    ORDER BY (y.status='active') DESC, e.school_year_id DESC
+    LIMIT 1
+  ";
+  $stmt = $conn->prepare($q);
+  $stmt->bind_param("i", $student_id);
+  $stmt->execute();
+  $en = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
 
-if ($en) {
+  if (!$en) {
+    // No enrollment → we cannot safely insert attendance tied to FKs
+    echo json_encode([
+      'success'=>false,
+      'error'=>'No enrollment found for this student (cannot mark attendance).'
+    ]);
+    exit;
+  }
+
   $advisory_id    = (int)$en['advisory_id'];
   $school_year_id = (int)$en['school_year_id'];
 
-  // Try to pick one subject for this advisory+SY (any is fine for a "daily" mark)
+  // Any subject under that advisory & school year
   $qs = "
     SELECT subject_id
     FROM subjects
@@ -89,88 +98,101 @@ if ($en) {
   $stmt->execute();
   $sub = $stmt->get_result()->fetch_assoc();
   $stmt->close();
-  if ($sub) $subject_id = (int)$sub['subject_id'];
-}
 
-/* --------------------------------------------------------------------------
-   3) Login session
--------------------------------------------------------------------------- */
-session_regenerate_id(true);
+  if (!$sub) {
+    echo json_encode([
+      'success'=>false,
+      'error'=>'No subject found for the student’s advisory & school year (cannot mark attendance).'
+    ]);
+    exit;
+  }
 
-// Clear other roles
-unset($_SESSION['teacher_id'], $_SESSION['teacher_fullname'], $_SESSION['teacher_name'],
-      $_SESSION['admin_id'], $_SESSION['admin_fullname']);
-$_SESSION['role'] = 'STUDENT';
+  $subject_id = (int)$sub['subject_id'];
 
-// Set student identity (do NOT set subject/advisory here for UI flow)
-$_SESSION['student_id']       = (int)$row['student_id'];
-$_SESSION['student_fullname'] = (string)$row['fullname'];
-$_SESSION['fullname']         = (string)$row['fullname'];
-$_SESSION['avatar_path']      = (string)($row['avatar_path'] ?? '');
-$_SESSION['face_image']       = (string)($row['face_image_path'] ?? '');
+  /* ------------------------------------------------------------------------
+     3) Login session
+  ------------------------------------------------------------------------ */
+  session_regenerate_id(true);
 
-// Re-send cookie with same scope as face_login.php
-$HTTPS  = is_https();
-$DOMAIN = cookie_domain_for_host($_SERVER['HTTP_HOST'] ?? '');
-$PATH   = base_path();
-setcookie(session_name(), session_id(), [
-  'expires'  => 0,
-  'path'     => $PATH,        // 👈 must match face_login.php
-  'domain'   => $DOMAIN ?: '',
-  'secure'   => $HTTPS,
-  'httponly' => true,
-  'samesite' => 'Lax',
-]);
+  // Clear other roles
+  unset($_SESSION['teacher_id'], $_SESSION['teacher_fullname'], $_SESSION['teacher_name'],
+        $_SESSION['admin_id'], $_SESSION['admin_fullname']);
+  $_SESSION['role'] = 'STUDENT';
 
-/* --------------------------------------------------------------------------
-   4) Attendance write-on-login (one mark per day)
-      Rules:
-        - Mark "Present" only once per calendar day (Asia/Manila) per student.
-        - We key uniqueness by (student_id, school_year_id, advisory_id, DATE(timestamp)).
-        - If no active enrollment found, we still allow a record with 0s to avoid losing the mark.
--------------------------------------------------------------------------- */
-$today = date('Y-m-d');
-$already = 0;
+  // Set student identity (do NOT set subject/advisory here for UI flow)
+  $_SESSION['student_id']       = (int)$row['student_id'];
+  $_SESSION['student_fullname'] = (string)$row['fullname'];
+  $_SESSION['fullname']         = (string)$row['fullname'];
+  $_SESSION['avatar_path']      = (string)($row['avatar_path'] ?? '');
+  $_SESSION['face_image']       = (string)($row['face_image_path'] ?? '');
 
-$chk = $conn->prepare("
-  SELECT COUNT(*) AS cnt
-  FROM attendance_records
-  WHERE student_id = ?
-    AND DATE(`timestamp`) = ?
-    AND (school_year_id = ? OR ? = 0)   -- allow match when we don't know SY (0)
-    AND (advisory_id    = ? OR ? = 0)   -- allow match when we don't know advisory (0)
-  LIMIT 1
-");
-$chk->bind_param("isiiii", $student_id, $today, $school_year_id, $school_year_id, $advisory_id, $advisory_id);
-$chk->execute();
-$already = (int)$chk->get_result()->fetch_assoc()['cnt'];
-$chk->close();
+  // Re-send cookie with same scope as face_login.php
+  $HTTPS  = is_https();
+  $DOMAIN = cookie_domain_for_host($_SERVER['HTTP_HOST'] ?? '');
+  $PATH   = base_path();
+  setcookie(session_name(), session_id(), [
+    'expires'  => 0,
+    'path'     => $PATH,        // 👈 must match face_login.php
+    'domain'   => $DOMAIN ?: '',
+    'secure'   => $HTTPS,
+    'httponly' => true,
+    'samesite' => 'Lax',
+  ]);
 
-$attendance_inserted = false;
-if ($already === 0) {
-  $ins = $conn->prepare("
-    INSERT INTO attendance_records
-      (student_id, subject_id, advisory_id, school_year_id, status, `timestamp`)
-    VALUES (?, ?, ?, ?, 'Present', NOW())
+  /* ------------------------------------------------------------------------
+     4) Attendance write-on-login (one mark per day per student)
+        - Duplicate guard: student_id + DATE(timestamp)
+  ------------------------------------------------------------------------ */
+  $today = date('Y-m-d');
+
+  $chk = $conn->prepare("
+    SELECT COUNT(*) AS cnt
+    FROM attendance_records
+    WHERE student_id = ?
+      AND DATE(`timestamp`) = ?
+    LIMIT 1
   ");
-  $ins->bind_param("iiii", $student_id, $subject_id, $advisory_id, $school_year_id);
-  $ins->execute();
-  $ins->close();
-  $attendance_inserted = true;
-}
+  $chk->bind_param("is", $student_id, $today);
+  $chk->execute();
+  $already = (int)$chk->get_result()->fetch_assoc()['cnt'];
+  $chk->close();
 
-session_write_close();
-echo json_encode([
-  'success'              => true,
-  'student_id'           => $_SESSION['student_id'],
-  'studentName'          => $_SESSION['student_fullname'],
-  'attendance'           => [
-      'inserted'         => $attendance_inserted,
-      'date'             => $today,
-      'school_year_id'   => $school_year_id,
-      'advisory_id'      => $advisory_id,
-      'subject_id'       => $subject_id,
-      'status'           => 'Present'
-  ],
-]);
-exit;
+  $attendance_inserted = false;
+  if ($already === 0) {
+    $ins = $conn->prepare("
+      INSERT INTO attendance_records
+        (student_id, subject_id, advisory_id, school_year_id, status, `timestamp`)
+      VALUES (?, ?, ?, ?, 'Present', NOW())
+    ");
+    $ins->bind_param("iiii", $student_id, $subject_id, $advisory_id, $school_year_id);
+    $ins->execute();
+    $ins->close();
+    $attendance_inserted = true;
+  }
+
+  session_write_close();
+  echo json_encode([
+    'success'              => true,
+    'student_id'           => $_SESSION['student_id'],
+    'studentName'          => $_SESSION['student_fullname'],
+    'attendance'           => [
+        'inserted'         => $attendance_inserted,
+        'alreadyMarked'    => !$attendance_inserted,
+        'date'             => $today,
+        'school_year_id'   => $school_year_id,
+        'advisory_id'      => $advisory_id,
+        'subject_id'       => $subject_id,
+        'status'           => 'Present'
+    ],
+  ]);
+  exit;
+
+} catch (Throwable $e) {
+  // Helpful error for debugging on prod too
+  http_response_code(500);
+  echo json_encode([
+    'success'=>false,
+    'error'=>'DB error: '.$e->getMessage()
+  ]);
+  exit;
+}
