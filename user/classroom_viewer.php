@@ -99,8 +99,10 @@ if (isset($_GET['action']) && (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strto
     exit;
   }
 
-  // GET SEATING (saved layout)
+  // GET SEATING (synced with teacher layout)
   if ($action === 'get_seating') {
+    require_once __DIR__ . '/../config/db.php';
+
     $sql = "
       SELECT seat_no, student_id, x, y
       FROM seating_plan
@@ -109,19 +111,25 @@ if (isset($_GET['action']) && (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strto
     ";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("iii", $sy, $ad, $sj);
-    if (!$stmt->execute()) { echo json_encode(['seating'=>[]]); exit; }
+    if (!$stmt->execute()) {
+      echo json_encode(['seating'=>[]]);
+      exit;
+    }
+
     $res = $stmt->get_result();
-    $rows=[];
+    $rows = [];
     while ($r = $res->fetch_assoc()) {
       $rows[] = [
         'seat_no'    => (int)$r['seat_no'],
         'student_id' => is_null($r['student_id']) ? null : (int)$r['student_id'],
-        'x'          => is_null($r['x']) ? null : (int)$r['x'],
-        'y'          => is_null($r['y']) ? null : (int)$r['y'],
+        'x'          => is_null($r['x']) ? null : (float)$r['x'],
+        'y'          => is_null($r['y']) ? null : (float)$r['y'],
       ];
     }
     $stmt->close();
-    echo json_encode(['seating'=>$rows]);
+    $conn->close();
+
+    echo json_encode(['seating' => $rows]);
     exit;
   }
 
