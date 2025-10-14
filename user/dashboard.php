@@ -135,7 +135,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
   <!-- Actions -->
   <div class="wrap grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3 md:gap-4 mb-6">
-    <!-- Attendance tile (added) -->
+    <!-- Attendance tile -->
     <button class="tile t-green" data-action="attendance" aria-label="Mark Attendance">
       <span class="emoji">✅</span><div class="label">Attendance</div>
     </button>
@@ -147,8 +147,8 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
       <span class="emoji">🍎</span><div class="label">Snack</div>
     </button>
     <button class="tile t-rose" id="btnAskOut" aria-label="Ask Out Time">
-  <span class="emoji">🚪</span><div class="label">Out Time</div>
-</button>
+      <span class="emoji">🚪</span><div class="label">Out Time</div>
+    </button>
 
     <button class="tile t-cyan"   data-action="water_break" aria-label="Water Break">
       <span class="emoji">💧</span><div class="label">Water</div>
@@ -259,12 +259,10 @@ async function askOutTime(){
     if(!j.ok){ toast(j.message || 'Request failed','err'); return; }
     toast(j.dup ? 'Already pending approval' : 'Request sent to teacher');
 
-    // show pending state
     statusChip.classList.add('bad');
     statusChip.textContent = '⏳ Waiting for teacher approval';
     statusText.textContent  = 'Your Out Time request is pending.';
 
-    // start polling your own status (the teacher will change it to out_time once approved)
     if(myReqPoll) clearInterval(myReqPoll);
     myReqPoll = setInterval(loadStatus, 3000);
   }catch(e){
@@ -276,7 +274,6 @@ async function askOutTime(){
 
 btnAskOut.addEventListener('click', askOutTime);
 
-// Fetch current behavior
 async function loadStatus(){
   try{
     const res = await fetch('../api/get_behavior_status.php', { cache:'no-store', credentials:'include' });
@@ -297,26 +294,23 @@ async function loadStatus(){
   }
 }
 
-// Send behavior action (optimistic)
 async function logAction(action_type){
   setBusy(true);
-  // optimistic UI
   paintStatus(action_type, new Date().toISOString());
   try{
-const resp = await fetch('../api/log_behavior.php', {
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  credentials:'include',
-  body: JSON.stringify({ student_id, action_type })
-});
-if (!resp.ok) {
-  const txt = await resp.text();
-  throw new Error('HTTP '+resp.status+' — '+txt);
-}
-const r = await resp.json();
-toast(r?.message || 'Saved');
-await loadStatus(); // reconcile
-
+    const resp = await fetch('../api/log_behavior.php', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'include',
+      body: JSON.stringify({ student_id, action_type })
+    });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error('HTTP '+resp.status+' — '+txt);
+    }
+    const r = await resp.json();
+    toast(r?.message || 'Saved');
+    await loadStatus();
   }catch(e){
     toast('Network error','err');
   }finally{
@@ -335,23 +329,30 @@ setInterval(loadStatus, 4000);
 // --- Auto mark attendance on dashboard load ---
 async function markAttendanceOnLoad(){
   try {
-    const res = await fetch('../api/log_behavior.php', {
+    // 1️⃣ Log behavior
+    await fetch('../api/log_behavior.php', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       credentials: 'include',
       body: JSON.stringify({ student_id, action_type:'attendance' })
     });
-    if (!res.ok) throw new Error('Attendance failed');
-    const j = await res.json();
-    console.log('Attendance:', j.message);
+
+    // 2️⃣ Mark official attendance record
+    await fetch('../api/mark_attendance.php', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({
+        student_id: student_id,
+        status: 'Present'
+      })
+    });
   } catch(e){
     console.warn('Could not mark attendance:', e);
   }
 }
 
-// Call on page load
 window.addEventListener('DOMContentLoaded', markAttendanceOnLoad);
-
 </script>
 </body>
 </html>
