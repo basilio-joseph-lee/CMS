@@ -334,6 +334,87 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 #stage.extra-splitback .chair-back::before { left:0; } 
 #stage.extra-splitback .chair-back::after { right:0; }
 
+/* Chair styles matching classroom_simulator */
+.chair-back {
+  width: var(--back-w,70px);
+  height: var(--back-h,28px);
+  background: var(--chair-back,#9ca3af);
+  border:2px solid var(--chair-border,#6b7280);
+  border-radius: var(--back-r,4px);
+  margin:0 auto;
+  position:relative;
+  z-index:1;
+}
+.chair-seat {
+  width: var(--seat-w,70px);
+  height: var(--seat-h,18px);
+  background: var(--chair-seat,#d1d5db);
+  border:2px solid var(--chair-border,#6b7280);
+  border-radius: var(--seat-r,4px);
+  margin: var(--seat-mt,-6px) auto 0;
+  position:relative;
+  z-index:2;
+}
+
+/* Chair legs / stand */
+.chair-back::before,
+.chair-back::after {
+  content: "";
+  position: absolute;
+  width: 6px;       /* leg thickness */
+  height: 28px;     /* leg height */
+  background: var(--chair-back,#9ca3af);
+  bottom: -28px;
+  border-radius: 2px;
+}
+.chair-back::before { left: 10px; }
+.chair-back::after  { right: 10px; }
+
+/* Extra shape classes */
+#stage.no-back .chair-back { display:none; }
+#stage.extra-tablet .chair-seat::after {
+  content:""; position:absolute; right:-18px; top:-10px;
+  width:28px; height:16px; background:var(--desk-grad-1);
+  border:2px solid var(--desk-border); border-radius:5px;
+}
+#stage.extra-post .chair-seat::after {
+  content:""; position:absolute; left:50%; transform:translateX(-50%);
+  bottom:-22px; width:6px; height:24px; background:var(--chair-border);
+  border-radius:3px;
+}
+#stage.extra-tripod .chair-seat::before,
+#stage.extra-tripod .chair-seat::after {
+  content:""; position:absolute; bottom:-16px; width:6px; height:16px;
+  background:var(--chair-border); border-radius:3px;
+}
+#stage.extra-tripod .chair-seat::before { left:26%; transform:rotate(6deg); }
+#stage.extra-tripod .chair-seat::after { right:26%; transform:rotate(-6deg); }
+#stage.extra-wings .chair-back::before,
+#stage.extra-wings .chair-back::after {
+  content:""; position:absolute; top:4px; width:10px; height:18px;
+  background:var(--chair-back); border:2px solid var(--chair-border);
+  border-radius:8px;
+}
+#stage.extra-wings .chair-back::before { left:-12px; }
+#stage.extra-wings .chair-back::after { right:-12px; }
+#stage.extra-stripes .chair-back {
+  background: repeating-linear-gradient(90deg, rgba(0,0,0,.10) 0 6px, rgba(255,255,255,.12) 6px 12px),
+  var(--chair-back);
+}
+#stage.extra-notch .chair-seat::after {
+  content:""; position:absolute; left:50%; transform:translateX(-50%);
+  top:-6px; width:14px; height:8px; background:var(--chair-seat);
+  border:2px solid var(--chair-border); border-bottom:none; border-radius:10px 10px 0 0;
+}
+#stage.extra-splitback .chair-back { background:transparent; border-color:transparent; height:0; }
+#stage.extra-splitback .chair-back::before,
+#stage.extra-splitback .chair-back::after {
+  content:""; position:absolute; top:-22px; width:30px; height:20px;
+  background:var(--chair-back); border:2px solid var(--chair-border); border-radius:4px;
+}
+#stage.extra-splitback .chair-back::before { left:0; }
+#stage.extra-splitback .chair-back::after { right:0; }
+
     /* helper: hide names toggle */
     .hide-names .name { display:none !important; }
     .hide-names .status-bubble { left:calc(100% + 6px); } /* keep bubble aligned */
@@ -501,92 +582,87 @@ function shadeColor(color, percent) {
 }
 
     // Render seats (view-only)
-    function renderSeats(){
-      const seatLayer = document.getElementById('seatLayer');
-      seatLayer.innerHTML = '';
-      const M = stageMetrics();
-      seats = seats.map((s,i)=>{
-        if (s.x==null || s.y==null){
-          const c = i % Math.max(1,M.maxCols), r = Math.floor(i/Math.max(1,M.maxCols));
-          s.x = M.pad + c*(M.seatW+M.gapX); s.y = M.pad + r*(M.seatH+M.gapY);
-        }
-        return s;
-      });
+ function renderSeats(){
+  const seatLayer = document.getElementById('seatLayer');
+  seatLayer.innerHTML = '';
+  const M = stageMetrics();
 
-      seats.forEach((seat,i) => {
-        const node = document.createElement('div');
-        node.className = 'seat';
-        node.dataset.seatNo = seat.seat_no;
-        node.dataset.studentId = seat.student_id ?? '';
-        node.style.left = (seat.x ?? 14) + 'px';
-        node.style.top  = (seat.y ?? 14) + 'px';
-
-        const s = students.find(x => x.student_id == seat.student_id);
-        const hasStudent = !!s;
-        const img = fixAvatar(s?.avatar_url);
-        const name = s?.fullname || '';
-
-        // behavior lookup
-        const st = hasStudent ? behaviorMap[String(s.student_id)] : null;
-        const act = st ? String(st.action || '').toLowerCase() : '';
-        const isAway = !!(st && st.is_away);
-
-        // map action → emoji
-        let overlayText = '';
-        switch (act) {
-          case 'restroom':        overlayText = '🚻'; break;
-          case 'snack':           overlayText = '🍎'; break;
-          case 'lunch_break':     overlayText = '🍱'; break;
-          case 'out_time':        overlayText = '🚪'; break;
-          case 'water_break':     overlayText = '💧'; break;
-          case 'not_well':        overlayText = '🤒'; break;
-          case 'borrow_book':     overlayText = '📚'; break;
-          case 'return_material': overlayText = '📦'; break;
-          case 'help_request':    overlayText = '✋'; break;
-          case 'participated':    overlayText = '✅'; break;
-          case 'im_back':         overlayText = '⬅️'; break;
-          default:                overlayText = ''; break;
-        }
-
-        // bubble title shows label + timestamp where available
-        const bubbleTitle = st && st.timestamp ? `${st.label || ''} — ${st.timestamp}` : (st && st.label ? st.label : '');
-
-node.innerHTML = `
-  <div class="card ${hasStudent?'has-student':'empty'} ${isAway ? 'is-away' : ''} ${seat.student_id == MY_ID ? 'me' : ''}">
-    ${ hasStudent ? `
-      <div class="avatar-wrapper">
-        <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';" />
-        ${ overlayText ? `<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>` : '' }
-      </div>
-    ` : '' }
-    <div class="desk-rect"></div>
-    <div class="chair-back"></div>
-    <div class="chair-seat"></div>
-  </div>
-  <div class="name">${hasStudent ? name : ''}</div>
-`;
-
-
-        if (isAway) node.classList.add('is-away'); else node.classList.remove('is-away');
-        if (seat.student_id == MY_ID) node.classList.add('me'); // highlight current student
-
-        // clicking a seat opens the modal with student details (for view-only)
-        node.addEventListener('click', (ev) => {
-          const sid = seat.student_id;
-          if (!sid) return;
-          const student = students.find(x => x.student_id == sid);
-          const st = behaviorMap[String(sid)] || {};
-          openStudentModal(student, st);
-        });
-
-        seatLayer.appendChild(node);
-      });
-
-      // update stats
-      const total = students.length;
-      const seatedCount = seats.reduce((a,s)=>a + (s.student_id!=null?1:0), 0);
-      document.getElementById('stats').textContent = `Students: ${total} • Seated: ${seatedCount} • Chairs: ${seats.length}`;
+  seats = seats.map((s,i)=>{
+    if(s.x==null || s.y==null){
+      const c = i % Math.max(1,M.maxCols);
+      const r = Math.floor(i/Math.max(1,M.maxCols));
+      s.x = M.pad + c*(M.seatW+M.gapX);
+      s.y = M.pad + r*(M.seatH+M.gapY);
     }
+    return s;
+  });
+
+  seats.forEach((seat,i)=>{
+    const node = document.createElement('div');
+    node.className = 'seat';
+    node.dataset.seatNo = seat.seat_no;
+    node.dataset.studentId = seat.student_id ?? '';
+    node.style.left = (seat.x ?? 14) + 'px';
+    node.style.top  = (seat.y ?? 14) + 'px';
+
+    const s = students.find(x => x.student_id == seat.student_id);
+    const hasStudent = !!s;
+    const img = fixAvatar(s?.avatar_url);
+    const name = s?.fullname || '';
+
+    const st = hasStudent ? behaviorMap[String(s.student_id)] : null;
+    const isAway = !!(st && st.is_away);
+
+    let overlayText = '';
+    switch ((st?.action || '').toLowerCase()) {
+      case 'restroom': overlayText='🚻'; break;
+      case 'snack': overlayText='🍎'; break;
+      case 'lunch_break': overlayText='🍱'; break;
+      case 'out_time': overlayText='🚪'; break;
+      case 'water_break': overlayText='💧'; break;
+      case 'not_well': overlayText='🤒'; break;
+      case 'borrow_book': overlayText='📚'; break;
+      case 'return_material': overlayText='📦'; break;
+      case 'help_request': overlayText='✋'; break;
+      case 'participated': overlayText='✅'; break;
+      case 'im_back': overlayText='⬅️'; break;
+    }
+
+    const bubbleTitle = st && st.timestamp ? `${st.label || ''} — ${st.timestamp}` : (st && st.label ? st.label : '');
+
+    node.innerHTML = `
+      <div class="card ${hasStudent?'has-student':'empty'} ${isAway?'is-away':''} ${seat.student_id==MY_ID?'me':''}">
+        ${hasStudent?`
+        <div class="avatar-wrapper">
+          <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';"/>
+          ${overlayText?`<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>`:''}
+        </div>`:''}
+        <div class="desk-rect"></div>
+        <div class="chair-back"></div>
+        <div class="chair-seat"></div>
+      </div>
+      <div class="name">${hasStudent?name:''}</div>
+    `;
+
+    if(isAway) node.classList.add('is-away'); else node.classList.remove('is-away');
+    if(seat.student_id==MY_ID) node.classList.add('me');
+
+    node.addEventListener('click', ()=>{
+      if(!seat.student_id) return;
+      const stu = students.find(x=>x.student_id==seat.student_id);
+      const st = behaviorMap[String(seat.student_id)]||{};
+      openStudentModal(stu, st);
+    });
+
+    seatLayer.appendChild(node);
+  });
+
+  // update stats
+  const total = students.length;
+  const seatedCount = seats.reduce((a,s)=>a+(s.student_id!=null?1:0),0);
+  document.getElementById('stats').textContent = `Students: ${total} • Seated: ${seatedCount} • Chairs: ${seats.length}`;
+}
+
 
     // Normalize seating payload
     function normalizeSeating(raw){
