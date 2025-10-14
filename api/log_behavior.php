@@ -49,6 +49,15 @@ try {
     $t = preg_replace('/[^a-z0-9]+/i', '_', $t); // collapse to underscores
     $t = trim($t, '_');
 
+    if($t === 'attendance'){
+    $stmt2 = $conn->prepare("INSERT INTO attendance_records (student_id, subject_id, advisory_id, school_year_id, status) VALUES (?,?,?,?,?)");
+    $status = 'Present';
+    $stmt2->bind_param("iiiis", $student_id, $_SESSION['subject_id'], $_SESSION['advisory_id'], $_SESSION['school_year_id'], $status);
+    $stmt2->execute();
+    $stmt2->close();
+}
+
+
     // alias map
     $aliases = [
         'i_m_back' => 'im_back', 'imback' => 'im_back', 'i_am_back' => 'im_back',
