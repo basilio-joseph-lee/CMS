@@ -10,9 +10,6 @@
 
 include "../config/db.php";
 
-/* ---------- Guards: require STUDENT ---------- */
-$student_id = $_SESSION['student_id'] ?? null;
-if (!$student_id) { header("Location: ../index.php"); exit; }
 
 /* ---------- CONTEXT (IDs) ---------- */
 $subject_id     = $_SESSION['active_subject_id']     ?? $_SESSION['subject_id']     ?? null;
