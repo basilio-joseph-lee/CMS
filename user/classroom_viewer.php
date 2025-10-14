@@ -132,24 +132,6 @@ if (isset($_GET['action']) && (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strto
     echo json_encode(['seating' => $rows]);
     exit;
   }
-// GET CURRENT MODE (Quiz / Discussion)
-if ($action === 'get_mode') {
-  $stmt = $conn->prepare("
-    SELECT mode_label
-    FROM classroom_mode
-    WHERE school_year_id=? AND advisory_id=? AND subject_id=?
-    ORDER BY updated_at DESC
-    LIMIT 1
-  ");
-  $stmt->bind_param("iii", $sy, $ad, $sj);
-  $stmt->execute();
-  $stmt->bind_result($mode_label);
-  $mode = 'Discussion';
-  if ($stmt->fetch()) $mode = $mode_label ?: 'Discussion';
-  $stmt->close();
-  echo json_encode(['ok'=>true,'mode'=>$mode]);
-  exit;
-}
 
   // GET BEHAVIOR / STATUS (latest status per student)
   if ($action === 'get_behavior') {
@@ -282,10 +264,6 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   </div>
   <div class="p-4">
     <div class="mb-4">
-      <div id="modeBanner" class="text-center font-extrabold text-xl text-white bg-green-600 py-2 rounded-lg mb-3 shadow">
-  Mode: Loading…
-</div>
-
       <div class="text-sm text-gray-700">Class: <b><?=htmlspecialchars($class_name)?></b> • <?=htmlspecialchars($subject_name)?> • <?=htmlspecialchars($year_label)?></div>
       <div class="text-xs text-gray-500">Viewing as: <b><?=htmlspecialchars($student_fullname)?></b></div>
     </div>
@@ -576,26 +554,6 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
         renderSeats();
       } catch(e){ console.error('refreshStudents',e); }
     }
-// --- Classroom Mode (Quiz/Discussion) Sync ---
-async function refreshMode(){
-  try {
-    const res = await fetch(SELF_API + 'get_mode', FETCH_OPTS);
-    const data = await res.json();
-    if (data.ok) {
-      const banner = document.getElementById('modeBanner');
-      banner.textContent = `Mode: ${data.mode}`;
-      banner.className = data.mode.toLowerCase().includes('quiz')
-        ? 'text-center font-extrabold text-xl text-white bg-red-600 py-2 rounded-lg mb-3 shadow'
-        : 'text-center font-extrabold text-xl text-white bg-green-600 py-2 rounded-lg mb-3 shadow';
-    }
-  } catch (e) {
-    console.warn('Failed to refresh mode', e);
-  }
-}
-
-// include this in interval cycle
-setInterval(refreshMode, 3000);
-refreshMode();
 
     // init
     loadData();
