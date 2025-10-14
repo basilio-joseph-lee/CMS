@@ -42,6 +42,20 @@ try {
     VALUES (?,?,?,?,?,?,?)
   ");
 
+  // after commit() in save_seating.php
+$color = $_POST['chair_color'] ?? 'classic';
+$shape = $_POST['chair_shape'] ?? 'classic';
+
+$upd = $conn->prepare("
+    INSERT INTO seating_style (school_year_id, advisory_id, subject_id, chair_color, chair_shape)
+    VALUES (?,?,?,?,?)
+    ON DUPLICATE KEY UPDATE chair_color=VALUES(chair_color), chair_shape=VALUES(chair_shape)
+");
+$upd->bind_param("iiiss", $sy, $ad, $sj, $color, $shape);
+$upd->execute();
+$upd->close();
+
+
   foreach ($items as $row) {
     $seat = intval($row['seat_no']);
     $sid  = isset($row['student_id']) ? ($row['student_id'] === null ? null : intval($row['student_id'])) : null;

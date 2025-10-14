@@ -192,6 +192,21 @@ if (isset($_GET['action']) && (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strto
     echo json_encode(['ok'=>true, 'map'=>$map]);
     exit;
   }
+  // GET THEME (teacher-chosen chair color/shape)
+if ($action === 'get_theme') {
+    $res = $conn->prepare("SELECT chair_color, chair_shape FROM seating_style WHERE school_year_id=? AND advisory_id=? AND subject_id=? LIMIT 1");
+    $res->bind_param("iii", $sy,$ad,$sj);
+    $res->execute();
+    $res->bind_result($chair_color,$chair_shape);
+    if($res->fetch()){
+        echo json_encode(['ok'=>true,'chair_color'=>$chair_color,'chair_shape'=>$chair_shape]);
+    } else {
+        echo json_encode(['ok'=>true,'chair_color'=>'classic','chair_shape'=>'classic']);
+    }
+    $res->close();
+    exit;
+}
+
 
 
   // unknown action
@@ -220,7 +235,8 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     #stage{ position:relative; min-height:540px; height:72vh; background: url('../../img/bg-8.png') center center / cover no-repeat; border-radius:12px; overflow:hidden; box-shadow: inset 0 0 20px rgba(0,0,0,0.15); }
     #seatLayer{ position:relative; width:100%; height:100%; }
     .seat{ width:100px; position:absolute; user-select:none; }
-    .desk-rect{ width:90px; height:40px; border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; background:linear-gradient(180deg,#e6cfa7,#d2a86a); border:2px solid #a16a2a; }
+    .desk-rect{ width:90px; height:40px; border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; background: linear-gradient(180deg, var(--desk-grad-1), var(--desk-grad-2));
+ border:2px solid #a16a2a; }
     .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; }
     .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; border-radius:9999px; }
     .seat .name{ margin-top:4px; font-size:13px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; position:relative; z-index:3; }
@@ -362,6 +378,19 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
     const placeGrid25=(n=25)=>placeGridCentered(5,5,n);
 
+    function applyThemeAndShape(color, shape){
+  // simple example: set desk gradient color based on teacher preference
+  document.documentElement.style.setProperty('--desk-grad-1', color || '#e6cfa7');
+  document.documentElement.style.setProperty('--desk-grad-2', color ? shadeColor(color, -15) : '#d2a86a');
+}
+
+// helper to darken color (optional)
+function shadeColor(color, percent) {
+    let f=parseInt(color.slice(1),16),t=percent<0?0:255,p=percent<0?percent*-1:percent;
+    let R=f>>16,G=f>>8&0x00FF,B=f&0x0000FF;
+    return "#" + (0x1000000 + (Math.round((t-R)*p/100)+R)*0x10000 + (Math.round((t-G)*p/100)+G)*0x100 + (Math.round((t-B)*p/100)+B)).toString(16).slice(1);
+}
+
     // Render seats (view-only)
     function renderSeats(){
       const seatLayer = document.getElementById('seatLayer');
@@ -489,11 +518,18 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     // Load initial data
     async function loadData(){
       try {
-        const [S,P,B] = await Promise.all([
-          fetch(SELF_API + 'get_students', FETCH_OPTS).then(r=>r.json()).catch(()=>({students:[]}) ),
-          fetch(SELF_API + 'get_seating',  FETCH_OPTS).then(r=>r.json()).catch(()=>({seating:[]}) ),
-          fetch(SELF_API + 'get_behavior', FETCH_OPTS).then(r=>r.json()).catch(()=>({map:{}}) )
-        ]);
+       const [S,P,B,T] = await Promise.all([
+  fetch(SELF_API + 'get_students', FETCH_OPTS).then(r=>r.json()).catch(()=>({students:[]}) ),
+  fetch(SELF_API + 'get_seating',  FETCH_OPTS).then(r=>r.json()).catch(()=>({seating:[]}) ),
+  fetch(SELF_API + 'get_behavior', FETCH_OPTS).then(r=>r.json()).catch(()=>({map:{}}) ),
+  fetch(SELF_API + 'get_theme',    FETCH_OPTS).then(r=>r.json()).catch(()=>({chair_color:'classic',chair_shape:'classic'}))
+]);
+
+students = S.students || [];
+seats = normalizeSeating(P.seating || P || []);
+behaviorMap = B.map || {};
+applyThemeAndShape(T.chair_color, T.chair_shape);
+
 
         students = S.students || [];
         seats = normalizeSeating(P.seating || P || []);
