@@ -299,19 +299,21 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 #stage.extra-splitback .chair-back::before{ left:0; } #stage.extra-splitback .chair-back::after { right:0; }
 
 /* ---- Chair legs / stand like teacher simulator ---- */
+/* teacher chair stand */
 .chair-back::before,
 .chair-back::after {
   content: "";
   position: absolute;
-  width: 6px;       /* thickness of leg */
-  height: 28px;     /* length of leg */
-  background: var(--chair-back, #9ca3af);
+  width: 6px;
+  height: 28px;
+  background: var(--chair-back);
   bottom: -28px;
-  border-radius: 2px;
+  border-radius: 4px;  /* maybe slightly rounded */
 }
 
-.chair-back::before { left: 10px; }
-.chair-back::after  { right: 10px; }
+.chair-back::before { left: 8px; }   /* adjust position exactly like teacher */
+.chair-back::after  { right: 8px; }
+
 
 /* Extra shapes / pseudo-elements for special chairs */
 #stage.no-back .chair-back { display: none; }
@@ -641,9 +643,6 @@ behaviorMap = B.map || {};
 applyThemeAndShape(T.chair_color, T.chair_shape);
 
 
-        students = S.students || [];
-        seats = normalizeSeating(P.seating || P || []);
-        behaviorMap = B.map || {};
 
         // auto-assign unseated students (simple)
         const seatedIds = new Set(seats.map(s=>s.student_id).filter(v=>v!=null));
