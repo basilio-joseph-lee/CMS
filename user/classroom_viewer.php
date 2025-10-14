@@ -3,7 +3,7 @@
 // Read-only student view of the 2D classroom simulator.
 // Requires a logged-in student (redirects to student_login.php if not present).
 
-include "../../config/db.php";
+include "/../config/db.php";
 session_start();
 
 // If your system uses another session key for students, change these accordingly.
