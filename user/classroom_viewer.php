@@ -247,6 +247,27 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     .ctl, .btn, .modal, #menu, .tpl, .tab-btn { display:none !important; }
     /* small responsiveness */
     @media (max-width:640px){ .seat{ transform:scale(.9); } }
+.desk-rect {
+  width: var(--seat-w, 90px);
+  height: var(--seat-h, 40px);
+  border-radius: var(--seat-r, 6px 6px 2px 2px);
+  margin: 0 auto;
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(180deg, var(--desk-grad-1,#e6cfa7), var(--desk-grad-2,#d2a86a));
+  border: 2px solid var(--chair-border,#a16a2a);
+}
+
+/* Optional: backrest if needed */
+.desk-rect::before {
+  content: '';
+  display: block;
+  width: var(--back-w, 70px);
+  height: var(--back-h, 28px);
+  border-radius: var(--back-r, 4px);
+  background: var(--chair-back, #9ca3af);
+  margin: 0 auto;
+}
 
     /* highlight current student seat */
     .seat.me .desk-rect { box-shadow: 0 6px 18px rgba(34,197,94,0.12); border-color: #10b981; }
