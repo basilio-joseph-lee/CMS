@@ -1,11 +1,5 @@
 <?php
-/**
- * STUDENT DASHBOARD — primary student UI
- * Flow: face_login.php → select_subject.php → dashboard.php
- */
-
 session_start();
-
 if (!isset($_SESSION['student_id'])) { header("Location: ../index.php"); exit; }
 
 $student_id     = (int)$_SESSION['student_id'];
@@ -26,32 +20,23 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
   :root{
-    /* keep palette in sync with simulator */
-    --brand:#bc6c25;       /* title orange */
+    --brand:#bc6c25;
     --panel:#ffffff;
     --bg:#fefae0;
-    --accent:#386641;      /* green from your sidebar */
+    --accent:#386641;
   }
   body{ background:var(--bg); font-family:'Comic Sans MS', cursive, sans-serif; }
-
-  /* Shell */
-  .wrap{ max-width:900px; margin-inline:auto; }
-
-  /* Glassy header */
+  .wrap{ max-width:1100px; margin-inline:auto; }
   .hero{
     background:linear-gradient(180deg,#fff8 0,#fff0 100%), url('../img/bg-8.png') center/cover no-repeat;
     border-radius:1.25rem;
     box-shadow: inset 0 0 16px rgba(0,0,0,.08);
   }
-
-  /* Cards */
   .card{
     background:var(--panel);
     border-radius:1.25rem;
     box-shadow:0 10px 30px rgba(0,0,0,.08);
   }
-
-  /* Action tiles */
   .tile{
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     gap:.35rem; text-align:center; padding:1.1rem .9rem; border-radius:1rem;
@@ -60,71 +45,59 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   }
   .tile:active{ transform:translateY(2px); box-shadow:0 4px 12px rgba(0,0,0,.08); }
   .tile[disabled]{ opacity:.6; pointer-events:none; }
-
-  /* Colors per action */
   .t-yellow{ background:#fef08a; }
-  .t-pink  { background:#fbcfe8; }
-  .t-green { background:#86efac; }
-  .t-blue  { background:#93c5fd; }
-  .t-cyan  { background:#a5f3fc; }
-  .t-rose  { background:#fecdd3; }
-
+  .t-pink{ background:#fbcfe8; }
+  .t-green{ background:#86efac; }
+  .t-blue{ background:#93c5fd; }
+  .t-cyan{ background:#a5f3fc; }
+  .t-rose{ background:#fecdd3; }
   .tile span.emoji{ font-size:1.9rem; line-height:1; }
   .tile .label{ font-size:.95rem; color:#1f2937; }
-
-  /* Status chip */
   .chip{
     display:inline-flex; align-items:center; gap:.4rem;
     background:#ecfccb; color:#14532d; border:2px solid #16a34a;
     border-radius:9999px; padding:.35rem .7rem; font-weight:800;
   }
   .chip.bad{ background:#fee2e2; color:#7f1d1d; border-color:#ef4444; }
-
-  /* Footer nav */
   .bar{
     position:sticky; bottom:0; left:0; right:0; z-index:10;
     background:#ffffffcc; backdrop-filter:blur(6px);
     border-top:1px solid #0000000f;
   }
-
-  /* Toast */
   #toast{ display:none; }
 </style>
 </head>
 
-<body class="min-h-screen p-4 md:p-6">
+<body class="min-h-screen p-3 sm:p-4 md:p-6">
+
   <!-- Header -->
-  <div class="wrap hero p-5 md:p-7 mb-5">
-    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+  <div class="wrap hero p-4 sm:p-5 md:p-7 mb-5">
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
       <div>
-        <h1 class="text-3xl md:text-4xl font-black" style="color:var(--brand)">🏫 Student Dashboard</h1>
-        <p class="text-sm text-gray-700 mt-1">
+        <h1 class="text-2xl sm:text-3xl md:text-4xl font-black" style="color:var(--brand)">🏫 Student Dashboard</h1>
+        <p class="text-xs sm:text-sm text-gray-700 mt-1">
           <?= htmlspecialchars($class_name) ?> • <?= htmlspecialchars($subject_name) ?> • <?= htmlspecialchars($year_label) ?>
         </p>
-        <!-- Logout Button -->
-<div class="mt-3">
-  <a
-    href="../config/logout.php?role=student"
-    class="inline-flex items-center justify-center rounded-xl bg-orange-500 px-4 py-2 text-sm sm:text-base font-semibold shadow-md hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-300 transition"
-  >
-    🚪 Logout
-  </a>
-  <button id="btnRelog"
-    class="inline-flex items-center justify-center rounded-xl bg-green-600 px-4 py-2 text-sm sm:text-base font-semibold shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-300 transition">
-    👤 Re-log (Face)
-  </button>
-  <!-- NEW: read-only viewer -->
-  <a
-    href="classroom_viewer.php"
-    class="inline-flex items-center justify-center rounded-xl bg-blue-500 px-4 py-2 text-sm sm:text-base font-semibold shadow-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-300 transition"
-    style="margin-left:.25rem"
-  >
-    👀 View Classroom
-  </a>
-</div>
+
+        <!-- Buttons -->
+        <div class="flex flex-wrap gap-2 mt-3">
+          <a href="../config/logout.php?role=student"
+             class="rounded-xl bg-orange-500 px-3 sm:px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-orange-600 transition">
+             🚪 Logout
+          </a>
+          <button id="btnRelog"
+            class="rounded-xl bg-green-600 px-3 sm:px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-green-700 transition">
+            👤 Re-log (Face)
+          </button>
+          <a href="classroom_viewer.php"
+             class="rounded-xl bg-blue-500 px-3 sm:px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-blue-600 transition">
+             👀 View Classroom
+          </a>
+        </div>
       </div>
-      <div class="card px-4 py-3">
-        <div class="text-xs text-gray-500 font-bold uppercase">Current status</div>
+
+      <div class="card px-4 py-3 text-center sm:text-left">
+        <div class="text-xs text-gray-500 font-bold uppercase">Current Status</div>
         <div class="mt-1">
           <span id="statusChip" class="chip" aria-live="polite">Loading…</span>
         </div>
@@ -133,39 +106,23 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     </div>
   </div>
 
-  <!-- Actions -->
-  <div class="wrap grid grid-cols-2 sm:grid-cols-3 md:grid-cols-7 gap-3 md:gap-4 mb-6">
-    <button class="tile t-yellow" data-action="restroom"  aria-label="Restroom">
-      <span class="emoji">🚻</span><div class="label">Restroom</div>
-    </button>
-    <button class="tile t-pink"   data-action="snack"     aria-label="Snack">
-      <span class="emoji">🍎</span><div class="label">Snack</div>
-    </button>
-    <button class="tile t-rose" id="btnAskOut" aria-label="Ask Out Time">
-  <span class="emoji">🚪</span><div class="label">Out Time</div>
-</button>
-
-    <button class="tile t-cyan"   data-action="water_break" aria-label="Water Break">
-      <span class="emoji">💧</span><div class="label">Water</div>
-    </button>
-    <button class="tile t-rose"   data-action="not_well"  aria-label="Not Feeling Well">
-      <span class="emoji">🤒</span><div class="label">Not Well</div>
-    </button>
-    <button class="tile t-green"  data-action="lunch_break" aria-label="Lunch Break">
-      <span class="emoji">🍱</span><div class="label">Lunch</div>
-    </button>
-    <button class="tile t-blue"   data-action="im_back"   aria-label="I’m Back">
-      <span class="emoji">🟢</span><div class="label">I’m Back</div>
-    </button>
+  <!-- Action Tiles -->
+  <div class="wrap grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4 mb-6">
+    <button class="tile t-yellow" data-action="restroom"><span class="emoji">🚻</span><div class="label">Restroom</div></button>
+    <button class="tile t-pink" data-action="snack"><span class="emoji">🍎</span><div class="label">Snack</div></button>
+    <button class="tile t-rose" id="btnAskOut"><span class="emoji">🚪</span><div class="label">Out Time</div></button>
+    <button class="tile t-cyan" data-action="water_break"><span class="emoji">💧</span><div class="label">Water</div></button>
+    <button class="tile t-rose" data-action="not_well"><span class="emoji">🤒</span><div class="label">Not Well</div></button>
+    <button class="tile t-green" data-action="lunch_break"><span class="emoji">🍱</span><div class="label">Lunch</div></button>
+    <button class="tile t-blue" data-action="im_back"><span class="emoji">🟢</span><div class="label">I’m Back</div></button>
   </div>
 
-  <!-- Status / tips -->
-  <div class="wrap grid md:grid-cols-2 gap-4">
+  <!-- Status and Tips -->
+  <div class="wrap grid grid-cols-1 md:grid-cols-2 gap-4">
     <div class="card p-5">
       <div class="text-xl font-black mb-2">🧾 Details</div>
       <div id="statusText" class="text-gray-700">Loading…</div>
     </div>
-
     <div class="card p-5">
       <div class="text-xl font-black mb-2">💡 Tips</div>
       <ul class="list-disc pl-5 text-gray-700 space-y-1">
@@ -179,17 +136,16 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     </div>
   </div>
 
-  <!-- Bottom bar: quick “I’m Back” -->
+  <!-- Footer -->
   <div class="bar mt-6">
-    <div class="wrap flex items-center justify-between px-4 py-3">
-      <div class="text-sm text-gray-700">Need to clear your status?</div>
+    <div class="wrap flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3">
+      <div class="text-sm text-gray-700 text-center sm:text-left">Need to clear your status?</div>
       <button id="quickBack" class="tile t-blue !py-2 !px-3 !rounded-full !flex-row !gap-2">
         <span class="emoji">🟢</span><span class="label font-black">I’m Back</span>
       </button>
     </div>
   </div>
 
-  <!-- Toast -->
   <div id="toast" class="fixed top-5 right-5 px-4 py-3 rounded-xl shadow text-white font-bold"></div>
 
 <script>
@@ -210,22 +166,19 @@ function toast(msg,type='ok'){
   toastBox.style.display = 'block';
   setTimeout(()=>toastBox.style.display='none', 1800);
 }
-
 function setBusy(b){
   document.querySelectorAll('[data-action]').forEach(btn=>{
-    if(b){ btn.setAttribute('disabled',''); btn.ariaBusy='true'; }
-    else { btn.removeAttribute('disabled'); btn.ariaBusy='false'; }
+    if(b){ btn.setAttribute('disabled',''); }
+    else { btn.removeAttribute('disabled'); }
   });
   document.getElementById('quickBack').toggleAttribute('disabled', b);
 }
-
 function fmtTime(ts){
   if(!ts) return '—';
-  const d = new Date(ts.replace(' ', 'T')); // handle "YYYY-MM-DD HH:MM:SS"
+  const d = new Date(ts.replace(' ', 'T'));
   if(Number.isNaN(+d)) return '—';
   return d.toLocaleString();
 }
-
 function paintStatus(action, ts){
   if(!action){
     statusChip.classList.remove('bad');
@@ -245,7 +198,6 @@ function paintStatus(action, ts){
 
 const btnAskOut = document.getElementById('btnAskOut');
 let myReqPoll = null;
-
 async function askOutTime(){
   try{
     setBusy(true);
@@ -253,31 +205,20 @@ async function askOutTime(){
     const j = await r.json();
     if(!j.ok){ toast(j.message || 'Request failed','err'); return; }
     toast(j.dup ? 'Already pending approval' : 'Request sent to teacher');
-
-    // show pending state
     statusChip.classList.add('bad');
     statusChip.textContent = '⏳ Waiting for teacher approval';
     statusText.textContent  = 'Your Out Time request is pending.';
-
-    // start polling your own status (the teacher will change it to out_time once approved)
     if(myReqPoll) clearInterval(myReqPoll);
     myReqPoll = setInterval(loadStatus, 3000);
-  }catch(e){
-    toast('Network error','err');
-  }finally{
-    setBusy(false);
-  }
+  }catch(e){ toast('Network error','err'); }finally{ setBusy(false); }
 }
-
 btnAskOut.addEventListener('click', askOutTime);
 
-// Fetch current behavior
 async function loadStatus(){
   try{
     const res = await fetch('../api/get_behavior_status.php', { cache:'no-store', credentials:'include' });
     if (!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
-
     let my = null;
     if(Array.isArray(data)){
       my = data.find(r=>String(r.student_id)===String(student_id));
@@ -291,39 +232,24 @@ async function loadStatus(){
     statusText.textContent = '⚠️ Cannot reach server. Your actions will try again.';
   }
 }
-
-// Send behavior action (optimistic)
 async function logAction(action_type){
   setBusy(true);
-  // optimistic UI
   paintStatus(action_type, new Date().toISOString());
   try{
-const resp = await fetch('../api/log_behavior.php', {
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  credentials:'include',
-  body: JSON.stringify({ student_id, action_type })
-});
-if (!resp.ok) {
-  const txt = await resp.text();
-  throw new Error('HTTP '+resp.status+' — '+txt);
+    const resp = await fetch('../api/log_behavior.php', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      credentials:'include', body: JSON.stringify({ student_id, action_type })
+    });
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    const r = await resp.json();
+    toast(r?.message || 'Saved');
+    await loadStatus();
+  }catch(e){ toast('Network error','err'); }finally{ setBusy(false); }
 }
-const r = await resp.json();
-toast(r?.message || 'Saved');
-await loadStatus(); // reconcile
-
-  }catch(e){
-    toast('Network error','err');
-  }finally{
-    setBusy(false);
-  }
-}
-
 document.querySelectorAll('[data-action]').forEach(btn=>{
   btn.addEventListener('click', ()=> logAction(btn.dataset.action));
 });
 document.getElementById('quickBack').addEventListener('click', ()=> logAction('im_back'));
-
 loadStatus();
 setInterval(loadStatus, 4000);
 </script>
