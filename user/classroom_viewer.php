@@ -235,19 +235,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     #stage{ position:relative; min-height:540px; height:72vh; background: url('../../img/bg-8.png') center center / cover no-repeat; border-radius:12px; overflow:hidden; box-shadow: inset 0 0 20px rgba(0,0,0,0.15); }
     #seatLayer{ position:relative; width:100%; height:100%; }
     .seat{ width:100px; position:absolute; user-select:none; }
-    .desk-rect{ width:90px; height:40px; border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; background: linear-gradient(180deg, var(--desk-grad-1), var(--desk-grad-2));
- border:2px solid #a16a2a; }
-    .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; }
-    .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; border-radius:9999px; }
-    .seat .name{ margin-top:4px; font-size:13px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; position:relative; z-index:3; }
-    .status-bubble{ position:absolute; top:6px; left:calc(100% + 8px); background:#fff; border:2px solid #111; border-radius:9999px; padding:8px 12px; font-size:12px; font-weight:700; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.2); pointer-events:none; }
-    .seat.is-away .avatar-img { visibility: hidden; }
-    .seat.is-away .name { opacity: 0.6; visibility: visible; color: black }
-    /* Make everything read-only visually — hide controls */
-    .ctl, .btn, .modal, #menu, .tpl, .tab-btn { display:none !important; }
-    /* small responsiveness */
-    @media (max-width:640px){ .seat{ transform:scale(.9); } }
-.desk-rect {
+    .desk-rect {
   width: var(--seat-w, 90px);
   height: var(--seat-h, 40px);
   border-radius: var(--seat-r, 6px 6px 2px 2px);
@@ -258,7 +246,6 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   border: 2px solid var(--chair-border,#a16a2a);
 }
 
-/* Optional: backrest if needed */
 .desk-rect::before {
   content: '';
   display: block;
@@ -268,6 +255,24 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   background: var(--chair-back, #9ca3af);
   margin: 0 auto;
 }
+
+/* Extra shape variations */
+#stage.extra-wings .desk-rect::before { border-radius: 12px; /* example wing effect */ }
+#stage.extra-tripod .desk-rect::before { border-radius: 9999px; width: 44px; height: 44px; }
+#stage.extra-notch .desk-rect::before { border-radius: 8px; height: 30px; }
+#stage.no-back .desk-rect::before { display: none; }
+#stage.extra-splitback .desk-rect::before { border-radius: 6px 6px 0 0; }
+#stage.extra-stripes .desk-rect::before { background: repeating-linear-gradient(45deg,
+    .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; }
+    .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; border-radius:9999px; }
+    .seat .name{ margin-top:4px; font-size:13px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; position:relative; z-index:3; }
+    .status-bubble{ position:absolute; top:6px; left:calc(100% + 8px); background:#fff; border:2px solid #111; border-radius:9999px; padding:8px 12px; font-size:12px; font-weight:700; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.2); pointer-events:none; }
+    .seat.is-away .avatar-img { visibility: hidden; }
+    .seat.is-away .name { opacity: 0.6; visibility: visible; color: black }
+    /* Make everything read-only visually — hide controls */
+    .ctl, .btn, .modal, #menu, .tpl, .tab-btn { display:none !important; }
+    /* small responsiveness */
+    @media (max-width:640px){ .seat{ transform:scale(.9); } }
 
     /* highlight current student seat */
     .seat.me .desk-rect { box-shadow: 0 6px 18px rgba(34,197,94,0.12); border-color: #10b981; }
