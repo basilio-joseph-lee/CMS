@@ -126,46 +126,67 @@ if (isset($_GET['action']) && (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strto
   }
 
   // GET BEHAVIOR / STATUS (recent actions per student)
-  if ($action === 'get_behavior') {
-    // Try a reasonable query — adapt if you have a different table name
-    // This returns rows of (student_id, action_type, timestamp)
-    $map = [];
-
-    // Attempt to query behavior_logs; if it doesn't exist, return empty map
-    $possible_tables = ['behavior_logs','behavior','student_behavior','behavior_history'];
-    $found = false;
-    foreach ($possible_tables as $tbl) {
-      $qtext = "
-        SELECT student_id, action_type, timestamp
-        FROM {$tbl}
-        WHERE school_year_id=? AND advisory_id=? AND subject_id=?
-        ORDER BY timestamp DESC
-        LIMIT 500
-      ";
-      $stmt = @$conn->prepare($qtext);
-      if (!$stmt) continue;
-      $found = true;
-      $stmt->bind_param("iii", $sy, $ad, $sj);
-      if (!$stmt->execute()) { $stmt->close(); continue; }
-      $res = $stmt->get_result();
-      while ($r = $res->fetch_assoc()) {
-        $sid = (string)$r['student_id'];
-        // store latest action per student (first one wins because ordered DESC)
-        if (!isset($map[$sid])) {
-          $map[$sid] = [
-            'action' => strtolower($r['action_type'] ?? ''),
-            'timestamp' => $r['timestamp']
-          ];
-        }
-      }
-      $stmt->close();
-      break;
+// GET BEHAVIOR / STATUS (latest status per student)
+if ($action === 'get_behavior') {
+    function normalize_action($a) {
+      $a = strtolower(trim($a));
+      $a = str_replace(['-',' '],'_',$a);
+      if (str_ends_with($a, '_request')) $a = substr($a, 0, -8);
+      return $a;
     }
+    function label_for($a) {
+      switch ($a) {
+        case 'restroom':        return '🚻 Restroom';
+        case 'snack':           return '🍎 Snack';
+        case 'water_break':     return '💧 Water Break';
+        case 'lunch_break':     return '🍱 Lunch Break';
+        case 'not_well':        return '🤒 Not Feeling Well';
+        case 'borrow_book':     return '📚 Borrowing Book';
+        case 'return_material': return '📦 Returning Material';
+        case 'help_request':    return '✋ Needs Help';
+        case 'participated':    return '✅ Participated';
+        case 'attendance':      return '✅ In';
+        case 'log_out':         return '🚪 Logged out';
+        default:                return ucfirst(str_replace('_',' ',$a));
+      }
+    }
+    $away_set = [
+      'restroom','snack','water_break','lunch_break',
+      'not_well','borrow_book','return_material','log_out'
+    ];
 
-    // If no behavior table found, return empty map
-    echo json_encode(['map'=>$map]);
+    $sql = "
+      SELECT bl.student_id, bl.action_type, bl.timestamp
+      FROM behavior_logs bl
+      INNER JOIN (
+        SELECT student_id, MAX(timestamp) ts
+        FROM behavior_logs
+        WHERE school_year_id=? AND advisory_id=? AND subject_id=?
+        GROUP BY student_id
+      ) last
+      ON last.student_id = bl.student_id AND last.ts = bl.timestamp
+    ";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("iii", $sy, $ad, $sj);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $map = [];
+    while ($row = $res->fetch_assoc()) {
+      $act = normalize_action($row['action_type']);
+      $map[(string)$row['student_id']] = [
+        'action'    => $act,
+        'label'     => label_for($act),
+        'is_away'   => in_array($act, $away_set, true),
+        'timestamp' => $row['timestamp']
+      ];
+    }
+    $stmt->close();
+
+    echo json_encode(['ok'=>true, 'map'=>$map]);
     exit;
-  }
+}
+
 
   // unknown action
   echo json_encode(['ok'=>false,'message'=>'unknown action']);
