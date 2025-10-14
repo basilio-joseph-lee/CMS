@@ -756,40 +756,33 @@ applyThemeAndShape(T.chair_color, T.chair_shape);
       renderSeats();
     });
 
-    function enableSeatTilt() {
+function enableSeatTilt() {
   const allSeats = document.querySelectorAll('.seat');
   allSeats.forEach(seat => {
     seat.addEventListener('mousemove', (e) => {
       const rect = seat.getBoundingClientRect();
       const x = e.clientX - rect.left - rect.width/2;
       const y = e.clientY - rect.top - rect.height/2;
-      const rotateX = (-y/rect.height)*15; // max tilt
-      const rotateY = (x/rect.width)*15;
-      seat.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.05)`;
+      
+      const rotateX = (-y/rect.height)*10; // head tilt
+      const rotateY = (x/rect.width)*10;
+
+      // Desk/seat tilts subtly
+      seat.style.transform = `rotateX(${rotateX/3}deg) rotateY(${rotateY/3}deg) scale(1.02)`;
+
+      // Head tilts more pronounced
+      const head = seat.querySelector('.tilt-head');
+      if(head) head.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
     });
+
     seat.addEventListener('mouseleave', () => {
-      seat.addEventListener('mousemove', (e) => {
-  const rect = seat.getBoundingClientRect();
-  const x = e.clientX - rect.left - rect.width/2;
-  const y = e.clientY - rect.top - rect.height/2;
-  const rotateX = (-y/rect.height)*10; // smaller tilt for seat
-  const rotateY = (x/rect.width)*10;
-  seat.style.transform = `rotateX(${rotateX/3}deg) rotateY(${rotateY/3}deg) scale(1.02)`; // subtle tilt for desk
-
-  // tilt the head more pronounced
-  const head = seat.querySelector('.tilt-head');
-  if(head) head.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
-});
-
-seat.addEventListener('mouseleave', () => {
-  seat.style.transform = 'rotateX(0) rotateY(0) scale(1)';
-  const head = seat.querySelector('.tilt-head');
-  if(head) head.style.transform = 'rotateX(0) rotateY(0)';
-});
-
+      seat.style.transform = 'rotateX(0) rotateY(0) scale(1)';
+      const head = seat.querySelector('.tilt-head');
+      if(head) head.style.transform = 'rotateX(0) rotateY(0)';
     });
   });
 }
+
 
 // Call after seats are rendered
 renderSeats();
