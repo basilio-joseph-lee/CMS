@@ -57,7 +57,7 @@ $hasActiveQuiz   = false;
 $roundRows       = [];
 
 if ($subject_id && $advisory_id && $school_year_id) {
-  $conn = @new mysqli("localhost", "root", "", "cms");
+
   if (!$conn->connect_error) {
     $conn->set_charset('utf8mb4');
 
