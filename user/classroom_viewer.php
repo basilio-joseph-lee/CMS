@@ -127,6 +127,7 @@ if (isset($_GET['action']) && (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strto
 
   // GET BEHAVIOR / STATUS (recent actions per student)
 // GET BEHAVIOR / STATUS (latest status per student)
+// GET BEHAVIOR / STATUS (latest status per student)
 if ($action === 'get_behavior') {
     function normalize_action($a) {
       $a = strtolower(trim($a));
@@ -155,37 +156,36 @@ if ($action === 'get_behavior') {
       'not_well','borrow_book','return_material','log_out'
     ];
 
+    // Use same logic as teacher-side: get latest per student
     $sql = "
       SELECT bl.student_id, bl.action_type, bl.timestamp
       FROM behavior_logs bl
       INNER JOIN (
         SELECT student_id, MAX(timestamp) ts
         FROM behavior_logs
-        WHERE school_year_id=? AND advisory_id=? AND subject_id=?
         GROUP BY student_id
       ) last
       ON last.student_id = bl.student_id AND last.ts = bl.timestamp
     ";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("iii", $sy, $ad, $sj);
-    $stmt->execute();
-    $res = $stmt->get_result();
+    $res = $conn->query($sql);
 
     $map = [];
-    while ($row = $res->fetch_assoc()) {
-      $act = normalize_action($row['action_type']);
-      $map[(string)$row['student_id']] = [
-        'action'    => $act,
-        'label'     => label_for($act),
-        'is_away'   => in_array($act, $away_set, true),
-        'timestamp' => $row['timestamp']
-      ];
+    if ($res) {
+      while ($row = $res->fetch_assoc()) {
+        $act = normalize_action($row['action_type']);
+        $map[(string)$row['student_id']] = [
+          'action'    => $act,
+          'label'     => label_for($act),
+          'is_away'   => in_array($act, $away_set, true),
+          'timestamp' => $row['timestamp']
+        ];
+      }
     }
-    $stmt->close();
 
     echo json_encode(['ok'=>true, 'map'=>$map]);
     exit;
 }
+
 
 
   // unknown action
