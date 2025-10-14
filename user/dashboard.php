@@ -331,6 +331,27 @@ document.getElementById('quickBack').addEventListener('click', ()=> logAction('i
 
 loadStatus();
 setInterval(loadStatus, 4000);
+
+// --- Auto mark attendance on dashboard load ---
+async function markAttendanceOnLoad(){
+  try {
+    const res = await fetch('../api/log_behavior.php', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      credentials: 'include',
+      body: JSON.stringify({ student_id, action_type:'attendance' })
+    });
+    if (!res.ok) throw new Error('Attendance failed');
+    const j = await res.json();
+    console.log('Attendance:', j.message);
+  } catch(e){
+    console.warn('Could not mark attendance:', e);
+  }
+}
+
+// Call on page load
+window.addEventListener('DOMContentLoaded', markAttendanceOnLoad);
+
 </script>
 </body>
 </html>
