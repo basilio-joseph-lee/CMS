@@ -235,34 +235,8 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     #stage{ position:relative; min-height:540px; height:72vh; background: url('../../img/bg-8.png') center center / cover no-repeat; border-radius:12px; overflow:hidden; box-shadow: inset 0 0 20px rgba(0,0,0,0.15); }
     #seatLayer{ position:relative; width:100%; height:100%; }
     .seat{ width:100px; position:absolute; user-select:none; }
-    .desk-rect {
-  width: var(--seat-w, 90px);
-  height: var(--seat-h, 40px);
-  border-radius: var(--seat-r, 6px 6px 2px 2px);
-  margin: 0 auto;
-  position: relative;
-  z-index: 1;
-  background: linear-gradient(180deg, var(--desk-grad-1,#e6cfa7), var(--desk-grad-2,#d2a86a));
-  border: 2px solid var(--chair-border,#a16a2a);
-}
-
-.desk-rect::before {
-  content: '';
-  display: block;
-  width: var(--back-w, 70px);
-  height: var(--back-h, 28px);
-  border-radius: var(--back-r, 4px);
-  background: var(--chair-back, #9ca3af);
-  margin: 0 auto;
-}
-
-/* Extra shape variations */
-#stage.extra-wings .desk-rect::before { border-radius: 12px; /* example wing effect */ }
-#stage.extra-tripod .desk-rect::before { border-radius: 9999px; width: 44px; height: 44px; }
-#stage.extra-notch .desk-rect::before { border-radius: 8px; height: 30px; }
-#stage.no-back .desk-rect::before { display: none; }
-#stage.extra-splitback .desk-rect::before { border-radius: 6px 6px 0 0; }
-#stage.extra-stripes .desk-rect::before { background: repeating-linear-gradient(45deg,
+    .desk-rect{ width:90px; height:40px; border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; background: linear-gradient(180deg, var(--desk-grad-1), var(--desk-grad-2));
+ border:2px solid #a16a2a; }
     .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; }
     .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; border-radius:9999px; }
     .seat .name{ margin-top:4px; font-size:13px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; position:relative; z-index:3; }
