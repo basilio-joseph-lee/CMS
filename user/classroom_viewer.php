@@ -414,6 +414,30 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 }
 #stage.extra-splitback .chair-back::before { left:0; }
 #stage.extra-splitback .chair-back::after { right:0; }
+.chair-back {
+  width: var(--back-w,70px);
+  height: var(--back-h,28px);
+  background: var(--chair-back,#9ca3af);
+  border:2px solid var(--chair-border,#6b7280);
+  border-radius: var(--back-r,4px);
+  margin:0 auto;
+  position:absolute;   /* change from relative to absolute for easier top control */
+  z-index:2;           /* above desk */
+  top: var(--chair-back-top,-18px);  /* adjustable */
+}
+
+.chair-seat {
+  width: var(--seat-w,70px);
+  height: var(--seat-h,18px);
+  background: var(--chair-seat,#d1d5db);
+  border:2px solid var(--chair-border,#6b7280);
+  border-radius: var(--seat-r,4px);
+  margin:0 auto;
+  position:absolute;   /* absolute so we can adjust */
+  z-index:3;           /* above chair-back */
+  top: var(--chair-seat-top,-6px);   /* adjustable */
+}
+
 
     /* helper: hide names toggle */
     .hide-names .name { display:none !important; }
@@ -630,19 +654,20 @@ function shadeColor(color, percent) {
 
     const bubbleTitle = st && st.timestamp ? `${st.label || ''} — ${st.timestamp}` : (st && st.label ? st.label : '');
 
-    node.innerHTML = `
-      <div class="card ${hasStudent?'has-student':'empty'} ${isAway?'is-away':''} ${seat.student_id==MY_ID?'me':''}">
-        ${hasStudent?`
-        <div class="avatar-wrapper">
-          <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';"/>
-          ${overlayText?`<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>`:''}
-        </div>`:''}
-        <div class="desk-rect"></div>
-        <div class="chair-back"></div>
-        <div class="chair-seat"></div>
-      </div>
-      <div class="name">${hasStudent?name:''}</div>
-    `;
+node.innerHTML = `
+  <div class="card ${hasStudent?'has-student':'empty'} ${isAway?'is-away':''} ${seat.student_id==MY_ID?'me':''}">
+    ${hasStudent?`
+    <div class="avatar-wrapper">
+      <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';"/>
+      ${overlayText?`<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>`:''}
+    </div>`:''}
+    <div class="desk-rect"></div>
+    <div class="chair-back" style="top: ${seat.chairBackTop || -18}px;"></div>
+    <div class="chair-seat" style="top: ${seat.chairSeatTop || -6}px;"></div>
+  </div>
+  <div class="name">${hasStudent?name:''}</div>
+`;
+
 
     if(isAway) node.classList.add('is-away'); else node.classList.remove('is-away');
     if(seat.student_id==MY_ID) node.classList.add('me');
