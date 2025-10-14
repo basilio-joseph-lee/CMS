@@ -377,12 +377,39 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     }
 
     const placeGrid25=(n=25)=>placeGridCentered(5,5,n);
+function applyThemeAndShape(color, shape){
+  const THEMES=[
+    {id:'classic',d1:'#e6cfa7',d2:'#d2a86a',seat:'#d1d5db',back:'#9ca3af',cb:'#6b7280'},
+    {id:'ocean',d1:'#b3e5fc',d2:'#4fc3f7',seat:'#b2f5ea',back:'#80deea',cb:'#0ea5e9'},
+    {id:'spring',d1:'#d9f99d',d2:'#86efac',seat:'#bbf7d0',back:'#86efac',cb:'#16a34a'},
+    {id:'berry',d1:'#f5d0fe',d2:'#e879f9',seat:'#fde68a',back:'#fbcfe8',cb:'#be185d'}
+    // add other themes if needed
+  ];
+  const SHAPES=[
+    {id:'classic',v:{bw:'70px',bh:'28px',br:'4px',sw:'70px',sh:'18px',sr:'4px',sm:'-6px'}},
+    {id:'rounded',v:{bw:'72px',bh:'34px',br:'18px',sw:'76px',sh:'22px',sr:'9999px',sm:'-4px'}}
+    // add other shapes if needed
+  ];
 
-    function applyThemeAndShape(color, shape){
-  // simple example: set desk gradient color based on teacher preference
-  document.documentElement.style.setProperty('--desk-grad-1', color || '#e6cfa7');
-  document.documentElement.style.setProperty('--desk-grad-2', color ? shadeColor(color, -15) : '#d2a86a');
+  const t = THEMES.find(x=>x.id===color) || THEMES[0];
+  const s = SHAPES.find(x=>x.id===shape) || SHAPES[0];
+
+  const stage = document.getElementById('stage');
+  stage.style.setProperty('--desk-grad-1', t.d1);
+  stage.style.setProperty('--desk-grad-2', t.d2);
+  stage.style.setProperty('--chair-seat', t.seat);
+  stage.style.setProperty('--chair-back', t.back);
+  stage.style.setProperty('--chair-border', t.cb);
+
+  stage.style.setProperty('--back-w', s.v.bw);
+  stage.style.setProperty('--back-h', s.v.bh);
+  stage.style.setProperty('--back-r', s.v.br);
+  stage.style.setProperty('--seat-w', s.v.sw);
+  stage.style.setProperty('--seat-h', s.v.sh);
+  stage.style.setProperty('--seat-r', s.v.sr);
+  stage.style.setProperty('--seat-mt', s.v.sm);
 }
+
 
 // helper to darken color (optional)
 function shadeColor(color, percent) {
