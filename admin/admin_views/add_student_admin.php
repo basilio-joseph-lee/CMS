@@ -1,5 +1,5 @@
 <?php
-
+session_start();
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 require_once __DIR__ . '/../../config/db.php';
@@ -89,8 +89,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_student_admin'
   $avatar_path = trim($_POST['avatar_path'] ?? '');
   $captured    = $_POST['captured_face'] ?? '';
 
-  // We enroll into the SY we loaded for this page
-  $ENROLL_SY_ID = $LOAD_SY_ID;
+  // We enroll into the SY we loaded for this page unless an explicit school_year_id is posted
+  $ENROLL_SY_ID = (int)($_POST['school_year_id'] ?? $LOAD_SY_ID);
 
   if ($fullname === '' || $gender === '' || !$advisory_id || !$subject_id || !$ENROLL_SY_ID) {
     $_SESSION['toast'] = '❌ Please complete all required fields.';
@@ -110,6 +110,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_student_admin'
     if ($raw !== false) {
       $fname = 'face_' . uniqid('', true) . '.jpg';
       $abs   = __DIR__ . '/../../student_faces/' . $fname;
+      // ensure dir exists
+      if (!is_dir(dirname($abs))) { @mkdir(dirname($abs), 0755, true); }
       file_put_contents($abs, $raw);
       $base = (strpos($_SERVER['REQUEST_URI'], '/CMS/') === 0) ? '/CMS' : '';
       $face_image_path = $base . '/student_faces/' . $fname;
@@ -117,56 +119,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_student_admin'
   }
 
   // --- generate a unique student_code (required because of uq_students_code) ---
-$student_code = trim($_POST['student_code'] ?? '');
-if ($student_code === '') {
-  // e.g. STU-2025-AB12CD  (uses current LOAD_SY_ID for traceability)
-  $student_code = 'STU-' . $LOAD_SY_ID . '-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
-}
+  $student_code = trim($_POST['student_code'] ?? '');
+  if ($student_code === '') {
+    // e.g. STU-2025-AB12CD  (uses current LOAD_SY_ID for traceability)
+    $student_code = 'STU-' . $LOAD_SY_ID . '-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+  }
 
-// guarantee uniqueness in case of a rare collision
-$chk = $conn->prepare("SELECT 1 FROM students WHERE student_code=? LIMIT 1");
-while (true) {
-  $chk->bind_param("s", $student_code);
-  $chk->execute();
-  $exists = $chk->get_result()->fetch_row();
-  if (!$exists) break;
-  // regenerate and recheck
-  $student_code = 'STU-' . $LOAD_SY_ID . '-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
-}
-$chk->close();
+  // guarantee uniqueness in case of a rare collision
+  $chk = $conn->prepare("SELECT 1 FROM students WHERE student_code=? LIMIT 1");
+  while (true) {
+    $chk->bind_param("s", $student_code);
+    $chk->execute();
+    $exists = $chk->get_result()->fetch_row();
+    if (!$exists) break;
+    // regenerate and recheck
+    $student_code = 'STU-' . $LOAD_SY_ID . '-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 6));
+  }
+  $chk->close();
 
+  // Insert student (includes student_code)
+  $ins = $conn->prepare("
+    INSERT INTO students (student_code, fullname, gender, avatar_path, face_image_path)
+    VALUES (?, ?, ?, ?, ?)
+  ");
+  $ins->bind_param("sssss", $student_code, $fullname, $gender, $avatar_path, $face_image_path);
+  $ins->execute();
+  $student_id = $conn->insert_id;
+  $ins->close();
 
-  // Insert student
-// Insert student (NOW includes student_code)
-$ins = $conn->prepare("
-  INSERT INTO students (student_code, fullname, gender, avatar_path, face_image_path)
-  VALUES (?, ?, ?, ?, ?)
-");
-$ins->bind_param("sssss", $student_code, $fullname, $gender, $avatar_path, $face_image_path);
-$ins->execute();
-$student_id = $conn->insert_id;
-$ins->close();
+  // --- Normalize enrollment target: prefer POSTed values (admin form) but fall back to loaded SY
+  $posted_advisory = (int)($_POST['advisory_id'] ?? 0);
+  $posted_subject  = (int)($_POST['subject_id'] ?? 0);
+  $posted_sy       = (int)($_POST['school_year_id'] ?? $LOAD_SY_ID);
 
-  
+  // final values used for enrollment (validate)
+  $final_advisory = $posted_advisory ?: $advisory_id;
+  $final_subject  = $posted_subject  ?: $subject_id;
+  $final_sy       = $posted_sy ?: $ENROLL_SY_ID;
 
-  // Enroll to class + subject for selected/loaded SY
-// Enroll to class + subject for selected/loaded SY (matches teacher filters)
-$en = $conn->prepare("
-    INSERT INTO student_enrollments (student_id, advisory_id, school_year_id, subject_id)
-    VALUES (?, ?, ?, ?)
-");
-$en->bind_param("iiii", $student_id, $advisory_id, $ENROLL_SY_ID, $subject_id);
-$en->execute();
-$en->close();
+  // Basic validation before insert
+  if (!$final_advisory || !$final_subject || !$final_sy) {
+    $_SESSION['toast'] = '❌ Enrollment failed: invalid section / subject / school year.';
+    $_SESSION['toast_type'] = 'error';
+    echo "<script>location.href='admin.php?page=add_student_admin';</script>";
+    exit;
+  }
 
-// Optional: set a session variable for teacher notification (if you want toast)
-$_SESSION['teacher_notify_new_student'] = [
-    'student_id'   => $student_id,
-    'subject_id'   => $subject_id,
-    'advisory_id'  => $advisory_id,
-    'school_year_id' => $ENROLL_SY_ID
-];
+  // Insert enrollment using the explicit final values
+  $en = $conn->prepare("
+      INSERT INTO student_enrollments (student_id, advisory_id, school_year_id, subject_id)
+      VALUES (?, ?, ?, ?)
+  ");
+  $en->bind_param("iiii", $student_id, $final_advisory, $final_sy, $final_subject);
+  $en->execute();
+  $en->close();
 
+  // Optional: set a session variable for teacher notification (if you want toast)
+  $_SESSION['teacher_notify_new_student'] = [
+      'student_id'     => $student_id,
+      'subject_id'     => $final_subject,
+      'advisory_id'    => $final_advisory,
+      'school_year_id' => $final_sy
+  ];
 
   $_SESSION['toast'] = '✅ Student successfully added!';
   $_SESSION['toast_type'] = 'success';
@@ -292,6 +306,8 @@ $femaleAvatars = [
           <input type="hidden" name="create_student_admin" value="1">
           <input type="hidden" id="captured_face" name="captured_face">
           <input type="hidden" id="avatar_path"  name="avatar_path" value="">
+          <!-- ensure the page posts the exact SY used (helps teacher flow) -->
+          <input type="hidden" name="school_year_id" value="<?= (int)$LOAD_SY_ID ?>">
 
           <input type="text" name="fullname" placeholder="Full Name" required class="w-full p-3 border border-yellow-400 rounded-xl">
           <select name="gender" required class="w-full p-3 border border-yellow-400 rounded-xl">
