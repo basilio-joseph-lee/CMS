@@ -281,6 +281,36 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   position:relative;
   z-index:0;
 }
+/* Chair structure: basic legs for classic chair */
+.chair-back::before,
+.chair-back::after {
+  content:"";
+  position:absolute;
+  width:6px;
+  height:28px;
+  background:var(--chair-back,#9ca3af);
+  bottom:-28px;
+  border-radius:2px;
+}
+
+.chair-back::before { left:10px; }
+.chair-back::after  { right:10px; }
+
+/* Tripod, notch, wings, splitback, and extra chairs will override/add as before */
+#stage.extra-tripod .chair-seat::before,
+#stage.extra-tripod .chair-seat::after{
+  content:""; position:absolute; bottom:-16px; width:6px; height:16px; background:var(--chair-border); border-radius:3px;
+}
+#stage.extra-tripod .chair-seat::before{ left:26%; transform:rotate(6deg); }
+#stage.extra-tripod .chair-seat::after{ right:26%; transform:rotate(-6deg); }
+
+#stage.extra-wings .chair-back::before,
+#stage.extra-wings .chair-back::after {
+  content:""; position:absolute; top:4px; width:10px; height:18px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:8px;
+}
+#stage.extra-wings .chair-back::before{ left:-12px; } 
+#stage.extra-wings .chair-back::after{ right:-12px; }
+
 
 /* Extra shape classes on #stage will apply as in teacher view */
 #stage.no-back .chair-back{ display:none; }
