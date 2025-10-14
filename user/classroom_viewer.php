@@ -99,10 +99,8 @@ if (isset($_GET['action']) && (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strto
     exit;
   }
 
-  // GET SEATING (synced with teacher layout)
+  // GET SEATING (saved layout)
   if ($action === 'get_seating') {
-    require_once __DIR__ . '/../config/db.php';
-
     $sql = "
       SELECT seat_no, student_id, x, y
       FROM seating_plan
@@ -111,25 +109,19 @@ if (isset($_GET['action']) && (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strto
     ";
     $stmt = $conn->prepare($sql);
     $stmt->bind_param("iii", $sy, $ad, $sj);
-    if (!$stmt->execute()) {
-      echo json_encode(['seating'=>[]]);
-      exit;
-    }
-
+    if (!$stmt->execute()) { echo json_encode(['seating'=>[]]); exit; }
     $res = $stmt->get_result();
-    $rows = [];
+    $rows=[];
     while ($r = $res->fetch_assoc()) {
       $rows[] = [
         'seat_no'    => (int)$r['seat_no'],
         'student_id' => is_null($r['student_id']) ? null : (int)$r['student_id'],
-        'x'          => is_null($r['x']) ? null : (float)$r['x'],
-        'y'          => is_null($r['y']) ? null : (float)$r['y'],
+        'x'          => is_null($r['x']) ? null : (int)$r['x'],
+        'y'          => is_null($r['y']) ? null : (int)$r['y'],
       ];
     }
     $stmt->close();
-    $conn->close();
-
-    echo json_encode(['seating' => $rows]);
+    echo json_encode(['seating'=>$rows]);
     exit;
   }
 
@@ -217,51 +209,80 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { background:#fefae0; font-family:'Comic Sans MS', cursive, sans-serif; }
-    #stage{ position:relative; min-height:540px; height:72vh; background: url('../../img/bg-8.png') center center / cover no-repeat; border-radius:12px; overflow:hidden; box-shadow: inset 0 0 20px rgba(0,0,0,0.15); }
+    /* --- stage CSS with same variables as teacher so chairs look identical --- */
+    #stage{
+      position:relative;
+      min-height:540px;
+      height:72vh;
+      background: url('../../img/bg-8.png') center center / cover no-repeat;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.15);
+
+      /* theme variables (set by JS) */
+      --desk-grad-1:#e6cfa7;
+      --desk-grad-2:#d2a86a;
+      --desk-border:#a16a2a;
+      --leg:#8b5e34;
+      --chair-seat:#d1d5db;
+      --chair-back:#9ca3af;
+      --chair-border:#6b7280;
+
+      /* chair shape variables (changed by JS) */
+      --back-w:70px; --back-h:28px; --back-r:4px;
+      --seat-w:70px; --seat-h:18px; --seat-r:4px; --seat-mt:-6px;
+    }
+
     #seatLayer{ position:relative; width:100%; height:100%; }
-    .seat{ width:100px; position:absolute; user-select:none; }
-    .desk-rect{ width:90px; height:40px; border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; background:linear-gradient(180deg,#e6cfa7,#d2a86a); border:2px solid #a16a2a; }
+    .seat{ width:100px; position:absolute; user-select:none; transition:opacity .15s ease; }
+    .seat .card{ position:relative; background:transparent; border:none; box-shadow:none; text-align:center; }
+
+    /* DESK */
+    .desk-rect{ width:90px; height:40px; background:linear-gradient(180deg,var(--desk-grad-1) 0%,var(--desk-grad-2) 100%); border:2px solid var(--desk-border); border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; }
+    .desk-rect::before,.desk-rect::after{ content:""; position:absolute; width:6px; height:28px; background:var(--leg); bottom:-28px; }
+    .desk-rect::before{ left:10px; } .desk-rect::after{ right:10px; }
+
+    /* CHAIR */
+    .chair-back{ width:var(--back-w); height:var(--back-h); background:var(--chair-back); border:2px solid var(--chair-border); border-radius:var(--back-r); margin:0 auto; position:relative; }
+    .chair-seat{ width:var(--seat-w); height:var(--seat-h); background:var(--chair-seat); border:2px solid var(--chair-border); border-radius:var(--seat-r); margin:var(--seat-mt) auto 0; position:relative; z-index:0; display:none; /* teacher shows chair-back/seat but student view uses simplified desk/avatar; kept for compatibility */ }
+
     .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; }
     .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; border-radius:9999px; }
-    .seat .name{ margin-top:4px; font-size:13px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; position:relative; z-index:3; }
+
+    .seat .name{ margin-top:-18px; font-size:12px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; display:block; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
     .status-bubble{ position:absolute; top:6px; left:calc(100% + 8px); background:#fff; border:2px solid #111; border-radius:9999px; padding:8px 12px; font-size:12px; font-weight:700; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.2); pointer-events:none; }
+
     .seat.is-away .avatar-img { visibility: hidden; }
     .seat.is-away .name { opacity: 0.6; visibility: visible; color: black }
-    /* Make everything read-only visually — hide controls */
+
+    /* Make everything read-only visually — hide controls if any */
     .ctl, .btn, .modal, #menu, .tpl, .tab-btn { display:none !important; }
-    /* small responsiveness */
-    @media (max-width:640px){ .seat{ transform:scale(.9); } }
 
     /* highlight current student seat */
     .seat.me .desk-rect { box-shadow: 0 6px 18px rgba(34,197,94,0.12); border-color: #10b981; }
-    .status-bubble[title] { cursor: help; }
 
-    /* modal (simple) */
-    .cv-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.45); z-index:9999; }
-    .cv-modal.open { display:flex; }
-    .cv-modal-card { background:#fff; padding:16px; border-radius:12px; width:min(520px,96%); box-shadow:0 12px 40px rgba(0,0,0,0.35); }
-    .cv-row { display:flex; gap:12px; align-items:center; }
-    .cv-avatar { width:72px; height:72px; border-radius:9999px; overflow:hidden; flex:0 0 72px; }
-    .cv-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
-    .cv-name { font-weight:800; font-size:18px; color:#111827; }
-    .cv-meta { font-size:13px; color:#4b5563; }
-    .small-muted { font-size:12px; color:#6b7280; margin-top:8px; }
+    /* small responsiveness */
+    @media (max-width:640px){ .seat{ transform:scale(.9); } }
 
-    /* helper: hide names toggle */
-    .hide-names .name { display:none !important; }
-    .hide-names .status-bubble { left:calc(100% + 6px); } /* keep bubble aligned */
-
-    /* top-right controls */
-    .top-controls { position: absolute; right: 12px; top: 12px; z-index: 60; display:flex; gap:8px; }
-    .top-controls button { padding:6px 10px; border-radius:8px; background:#fff; border:1px solid #e5e7eb; font-weight:700; cursor:pointer; }
+    .backBtn {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      z-index: 200;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid #e5e7eb;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(2,6,23,0.08);
+    }
   </style>
 </head>
 <body>
-  <div class="flex justify-end p-4">
-    <a href="dashboard.php" class="bg-green-700 hover:bg-green-800 text-white text-sm px-4 py-2 rounded-lg shadow">
-      ← Back
-    </a>
-  </div>
+  <button class="backBtn" id="backBtn">← Back</button>
+
   <div class="p-4">
     <div class="mb-4">
       <div class="text-sm text-gray-700">Class: <b><?=htmlspecialchars($class_name)?></b> • <?=htmlspecialchars($subject_name)?> • <?=htmlspecialchars($year_label)?></div>
@@ -270,33 +291,9 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
     <div id="stage" class="p-2">
       <div id="seatLayer"></div>
-
-      <!-- top-right small controls (Back + Toggle names) -->
-      <div class="top-controls" id="topControls">
-        <a href="../student_dashboard.php" class="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700">← Back</a>
-        <button id="toggleNamesBtn" title="Show / hide student names">Hide names</button>
-      </div>
     </div>
 
     <div class="mt-3 text-xs text-gray-600" id="stats">Loading…</div>
-  </div>
-
-  <!-- Student Detail modal -->
-  <div id="cvModal" class="cv-modal" role="dialog" aria-hidden="true">
-    <div class="cv-modal-card" role="document">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div class="text-lg font-bold">Student details</div>
-        <button id="closeCvModal" style="background:transparent;border:none;font-weight:800;cursor:pointer">✕</button>
-      </div>
-      <div class="cv-row">
-        <div class="cv-avatar"><img id="cvAvatar" src="/CMS/img/empty_desk.png" alt="avatar"></div>
-        <div style="flex:1">
-          <div class="cv-name" id="cvName">—</div>
-          <div class="cv-meta" id="cvStatus">Status: —</div>
-          <div class="small-muted" id="cvTimestamp"></div>
-        </div>
-      </div>
-    </div>
   </div>
 
   <script>
@@ -331,6 +328,37 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     let seats = [];
     let behaviorMap = {};
     const MY_ID = <?= json_encode($student_id) ?>;
+
+    // THEMES - a compact set used by teacher simulator (we set only variables we need)
+    const THEMES = [
+      {id:'classic', d1:'#e6cfa7', d2:'#d2a86a', db:'#a16a2a', leg:'#8b5e34', seat:'#d1d5db', back:'#9ca3af', cb:'#6b7280'},
+      {id:'ocean', d1:'#b3e5fc', d2:'#4fc3f7', db:'#0288d1', leg:'#01579b', seat:'#b2f5ea', back:'#80deea', cb:'#0ea5e9'},
+      {id:'sunset', d1:'#fed7aa', d2:'#fb923c', db:'#f59e0b', leg:'#92400e', seat:'#fee2e2', back:'#fecaca', cb:'#ea580c'},
+      {id:'modern', d1:'#e5e7eb', d2:'#cbd5e1', db:'#475569', leg:'#334155', seat:'#e2e8f0', back:'#cbd5e1', cb:'#334155'}
+    ];
+
+    const COLOR_KEY = `sim:chairColor:${<?= json_encode($school_year_id) ?>}:${<?= json_encode($advisory_id) ?>}:${<?= json_encode($subject_id) ?>}`;
+
+    function applyColorTheme(id) {
+      const t = THEMES.find(x=>x.id===id) || THEMES[0];
+      const stage = document.getElementById('stage');
+      stage.style.setProperty('--desk-grad-1', t.d1);
+      stage.style.setProperty('--desk-grad-2', t.d2);
+      stage.style.setProperty('--desk-border', t.db);
+      stage.style.setProperty('--leg', t.leg);
+      stage.style.setProperty('--chair-seat', t.seat);
+      stage.style.setProperty('--chair-back', t.back);
+      stage.style.setProperty('--chair-border', t.cb);
+      try { localStorage.setItem(COLOR_KEY, id); } catch(e){}
+    }
+
+    // pick saved theme or default
+    (function(){
+      try {
+        const saved = localStorage.getItem(COLOR_KEY) || 'classic';
+        applyColorTheme(saved);
+      } catch(e) { applyColorTheme('classic'); }
+    })();
 
     function toastLog(msg){ console.debug('[classroom view]',msg); }
 
@@ -410,34 +438,21 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
           default:                overlayText = ''; break;
         }
 
-        // bubble title shows label + timestamp where available
-        const bubbleTitle = st && st.timestamp ? `${st.label || ''} — ${st.timestamp}` : (st && st.label ? st.label : '');
-
         node.innerHTML = `
           <div class="card ${hasStudent?'has-student':'empty'} ${isAway ? 'is-away' : ''} ${seat.student_id == MY_ID ? 'me' : ''}">
             ${ hasStudent ? `
               <div class="avatar-wrapper">
                 <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';" />
-                ${ overlayText ? `<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>` : '' }
+                ${ overlayText ? `<div class="status-bubble" title="${st?.label || ''}">${overlayText}</div>` : '' }
               </div>
             ` : '' }
             <div class="desk-rect"></div>
           </div>
-          <div class="name">${hasStudent ? name : ''}</div>
+          <div class="name" title="${hasStudent?name:''}">${hasStudent ? name : ''}</div>
         `;
 
         if (isAway) node.classList.add('is-away'); else node.classList.remove('is-away');
         if (seat.student_id == MY_ID) node.classList.add('me'); // highlight current student
-
-        // clicking a seat opens the modal with student details (for view-only)
-        node.addEventListener('click', (ev) => {
-          const sid = seat.student_id;
-          if (!sid) return;
-          const student = students.find(x => x.student_id == sid);
-          const st = behaviorMap[String(sid)] || {};
-          openStudentModal(student, st);
-        });
-
         seatLayer.appendChild(node);
       });
 
@@ -462,29 +477,6 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
       Object.keys(raw).forEach((k,i)=> arr.push({seat_no:parseInt(k,10), student_id: raw[k]?parseInt(raw[k],10):null, x:null, y:null}));
       return arr.sort((a,b)=>a.seat_no-b.seat_no);
     }
-
-    // Student modal helpers
-    const cvModal = document.getElementById('cvModal');
-    const cvAvatar = document.getElementById('cvAvatar');
-    const cvName = document.getElementById('cvName');
-    const cvStatus = document.getElementById('cvStatus');
-    const cvTimestamp = document.getElementById('cvTimestamp');
-    const closeCvModalBtn = document.getElementById('closeCvModal');
-
-    function openStudentModal(student, st) {
-      cvAvatar.src = student ? (student.avatar_url || '/CMS/img/empty_desk.png') : '/CMS/img/empty_desk.png';
-      cvName.textContent = student ? student.fullname : '—';
-      cvStatus.textContent = st && st.label ? `Status: ${st.label}` : 'Status: —';
-      cvTimestamp.textContent = st && st.timestamp ? `Last updated: ${st.timestamp}` : '';
-      cvModal.classList.add('open');
-      cvModal.setAttribute('aria-hidden','false');
-    }
-    function closeStudentModal(){
-      cvModal.classList.remove('open');
-      cvModal.setAttribute('aria-hidden','true');
-    }
-    closeCvModalBtn.addEventListener('click', closeStudentModal);
-    cvModal.addEventListener('click', (e)=>{ if (e.target===cvModal) closeStudentModal(); });
 
     // Load initial data
     async function loadData(){
@@ -561,20 +553,6 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     setInterval(refreshBehavior, 3000);
     setInterval(refreshStudents, 6000);
 
-    // Toggle names show/hide (top control)
-    const toggleNamesBtn = document.getElementById('toggleNamesBtn');
-    let namesHidden = false;
-    toggleNamesBtn.addEventListener('click', ()=>{
-      namesHidden = !namesHidden;
-      if (namesHidden) {
-        document.getElementById('stage').classList.add('hide-names');
-        toggleNamesBtn.textContent = 'Show names';
-      } else {
-        document.getElementById('stage').classList.remove('hide-names');
-        toggleNamesBtn.textContent = 'Hide names';
-      }
-    });
-
     // resize: recompute positions if viewport changed
     window.addEventListener('resize', ()=>{
       // reflow seats into grid maintaining assigned student ids
@@ -585,6 +563,9 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
       seats = positions.map((p,i)=>({seat_no:i+1, student_id: assigned[i]||null, x:p.x, y:p.y}));
       renderSeats();
     });
+
+    // back button
+    document.getElementById('backBtn').addEventListener('click', ()=> history.back());
   </script>
 </body>
 </html>
