@@ -12,6 +12,47 @@ $subject_name   = $_SESSION['subject_name'] ?? 'Subject';
 $class_name     = $_SESSION['class_name'] ?? 'Section';
 $year_label     = $_SESSION['year_label'] ?? 'SY';
 ?>
+
+<?php
+// ...existing session checks...
+
+// fetch roster for this student's section
+$subject_id   = intval($_SESSION['subject_id'] ?? 0);
+$advisory_id  = intval($_SESSION['advisory_id'] ?? 0);
+$school_year  = intval($_SESSION['school_year_id'] ?? 0);
+
+$students = [];
+try {
+  $sql = "SELECT student_id, fullname, avatar_url FROM students
+          WHERE subject_id = ? AND advisory_id = ? AND school_year_id = ?
+          ORDER BY fullname";
+  $stmt = $db->prepare($sql);
+  $stmt->execute([$subject_id, $advisory_id, $school_year]);
+  $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (Exception $e) {
+  // log error, keep $students empty
+}
+
+// fetch current behavior statuses (if you keep a 'behavior' table)
+// adapt field names to match your schema
+$behavior = [];
+try {
+  $sql = "SELECT student_id, action_type, timestamp FROM behavior
+          WHERE subject_id = ? AND advisory_id = ? AND school_year_id = ?";
+  $stmt = $db->prepare($sql);
+  $stmt->execute([$subject_id, $advisory_id, $school_year]);
+  $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+  foreach($rows as $r){
+    $behavior[$r['student_id']] = $r;
+  }
+} catch (Exception $e) { }
+?>
+<script>
+  // server-inlined arrays
+  const SERVER_STUDENTS = <?= json_encode($students, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
+  const SERVER_BEHAVIOR = <?= json_encode($behavior, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
+</script>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
