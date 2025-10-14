@@ -235,28 +235,34 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     #stage{ position:relative; min-height:540px; height:72vh; background: url('../../img/bg-8.png') center center / cover no-repeat; border-radius:12px; overflow:hidden; box-shadow: inset 0 0 20px rgba(0,0,0,0.15); }
     #seatLayer{ position:relative; width:100%; height:100%; }
     .seat{ width:100px; position:absolute; user-select:none; }
-    .desk-rect{
-  width:var(--seat-w,90px);
-  height:var(--seat-h,40px);
-  background:linear-gradient(180deg,var(--desk-grad-1,#e6cfa7),var(--desk-grad-2,#d2a86a));
-  border:2px solid var(--desk-border,#a16a2a);
-  border-radius:6px 6px 2px 2px;
-  margin:0 auto;
-  position:relative;
-  z-index:1;
-}
-.desk-rect::before,
-.desk-rect::after{
-  content:"";
-  position:absolute;
-  width:6px; height:28px;
-  background:var(--leg,#8b5e34);
-  bottom:-28px;
-}
-.desk-rect::before{ left:10px; }
-.desk-rect::after{ right:10px; }
+    .desk-rect{ width:90px; height:40px; border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; background: linear-gradient(180deg, var(--desk-grad-1), var(--desk-grad-2));
+ border:2px solid #a16a2a; }
+    .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; }
+    .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; border-radius:9999px; }
+    .seat .name{ margin-top:4px; font-size:13px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; position:relative; z-index:3; }
+    .status-bubble{ position:absolute; top:6px; left:calc(100% + 8px); background:#fff; border:2px solid #111; border-radius:9999px; padding:8px 12px; font-size:12px; font-weight:700; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.2); pointer-events:none; }
+    .seat.is-away .avatar-img { visibility: hidden; }
+    .seat.is-away .name { opacity: 0.6; visibility: visible; color: black }
+    /* Make everything read-only visually — hide controls */
+    .ctl, .btn, .modal, #menu, .tpl, .tab-btn { display:none !important; }
+    /* small responsiveness */
+    @media (max-width:640px){ .seat{ transform:scale(.9); } }
 
-.chair-back{
+    /* highlight current student seat */
+    .seat.me .desk-rect { box-shadow: 0 6px 18px rgba(34,197,94,0.12); border-color: #10b981; }
+    .status-bubble[title] { cursor: help; }
+
+    /* modal (simple) */
+    .cv-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.45); z-index:9999; }
+    .cv-modal.open { display:flex; }
+    .cv-modal-card { background:#fff; padding:16px; border-radius:12px; width:min(520px,96%); box-shadow:0 12px 40px rgba(0,0,0,0.35); }
+    .cv-row { display:flex; gap:12px; align-items:center; }
+    .cv-avatar { width:72px; height:72px; border-radius:9999px; overflow:hidden; flex:0 0 72px; }
+    .cv-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+    .cv-name { font-weight:800; font-size:18px; color:#111827; }
+    .cv-meta { font-size:13px; color:#4b5563; }
+    .small-muted { font-size:12px; color:#6b7280; margin-top:8px; }
+    .chair-back{
   width:var(--back-w,70px);
   height:var(--back-h,28px);
   background:var(--chair-back,#9ca3af);
@@ -286,35 +292,11 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 #stage.extra-wings .chair-back::before, #stage.extra-wings .chair-back::after{ content:""; position:absolute; top:4px; width:10px; height:18px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:8px; }
 #stage.extra-wings .chair-back::before{ left:-12px; } #stage.extra-wings .chair-back::after{ right:-12px; }
 #stage.extra-stripes .chair-back{ background: repeating-linear-gradient(90deg, rgba(0,0,0,.10) 0 6px, rgba(255,255,255,.12) 6px 12px), var(--chair-back); }
-#stage.extra-notch .chair-seat::after{ content:""; position:absolute; left:50%; transform:translateX(-50%); top:-6px; width:14px; height:8px; background:var(--chair-seat); border:2px solid var(--chair-border); border-bottom:none; border-radius:10px 10px 0 0; }
+#stage.extra-notch .chair-seat::after{ content:""; position:absolute; left:50%; transform:translateX(-50%); top:-6px; width:14px; height:8px; background:var(--seat); border:2px solid var(--chair-border); border-bottom:none; border-radius:10px 10px 0 0; }
 #stage.extra-splitback .chair-back{ background:transparent; border-color:transparent; height:0; }
 #stage.extra-splitback .chair-back::before, #stage.extra-splitback .chair-back::after{ content:""; position:absolute; top:-22px; width:30px; height:20px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:4px; }
 #stage.extra-splitback .chair-back::before{ left:0; } #stage.extra-splitback .chair-back::after { right:0; }
-    .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; }
-    .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; border-radius:9999px; }
-    .seat .name{ margin-top:4px; font-size:13px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; position:relative; z-index:3; }
-    .status-bubble{ position:absolute; top:6px; left:calc(100% + 8px); background:#fff; border:2px solid #111; border-radius:9999px; padding:8px 12px; font-size:12px; font-weight:700; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.2); pointer-events:none; }
-    .seat.is-away .avatar-img { visibility: hidden; }
-    .seat.is-away .name { opacity: 0.6; visibility: visible; color: black }
-    /* Make everything read-only visually — hide controls */
-    .ctl, .btn, .modal, #menu, .tpl, .tab-btn { display:none !important; }
-    /* small responsiveness */
-    @media (max-width:640px){ .seat{ transform:scale(.9); } }
 
-    /* highlight current student seat */
-    .seat.me .desk-rect { box-shadow: 0 6px 18px rgba(34,197,94,0.12); border-color: #10b981; }
-    .status-bubble[title] { cursor: help; }
-
-    /* modal (simple) */
-    .cv-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.45); z-index:9999; }
-    .cv-modal.open { display:flex; }
-    .cv-modal-card { background:#fff; padding:16px; border-radius:12px; width:min(520px,96%); box-shadow:0 12px 40px rgba(0,0,0,0.35); }
-    .cv-row { display:flex; gap:12px; align-items:center; }
-    .cv-avatar { width:72px; height:72px; border-radius:9999px; overflow:hidden; flex:0 0 72px; }
-    .cv-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
-    .cv-name { font-weight:800; font-size:18px; color:#111827; }
-    .cv-meta { font-size:13px; color:#4b5563; }
-    .small-muted { font-size:12px; color:#6b7280; margin-top:8px; }
 
     /* helper: hide names toggle */
     .hide-names .name { display:none !important; }
@@ -533,18 +515,21 @@ function shadeColor(color, percent) {
         // bubble title shows label + timestamp where available
         const bubbleTitle = st && st.timestamp ? `${st.label || ''} — ${st.timestamp}` : (st && st.label ? st.label : '');
 
-        node.innerHTML = `
-          <div class="card ${hasStudent?'has-student':'empty'} ${isAway ? 'is-away' : ''} ${seat.student_id == MY_ID ? 'me' : ''}">
-            ${ hasStudent ? `
-              <div class="avatar-wrapper">
-                <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';" />
-                ${ overlayText ? `<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>` : '' }
-              </div>
-            ` : '' }
-            <div class="desk-rect"></div>
-          </div>
-          <div class="name">${hasStudent ? name : ''}</div>
-        `;
+node.innerHTML = `
+  <div class="card ${hasStudent?'has-student':'empty'} ${isAway ? 'is-away' : ''} ${seat.student_id == MY_ID ? 'me' : ''}">
+    ${ hasStudent ? `
+      <div class="avatar-wrapper">
+        <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';" />
+        ${ overlayText ? `<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>` : '' }
+      </div>
+    ` : '' }
+    <div class="desk-rect"></div>
+    <div class="chair-back"></div>
+    <div class="chair-seat"></div>
+  </div>
+  <div class="name">${hasStudent ? name : ''}</div>
+`;
+
 
         if (isAway) node.classList.add('is-away'); else node.classList.remove('is-away');
         if (seat.student_id == MY_ID) node.classList.add('me'); // highlight current student
