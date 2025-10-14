@@ -662,7 +662,7 @@ node.innerHTML = `
       ${overlayText?`<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>`:''}
     </div>`:''}
     <div class="desk-rect"></div>
-    <div class="chair-back" style="top: ${seat.chairBackTop || -18}px;"></div>
+    <div class="chair-back" style="top: ${seat.chairBackTop || -10}px;"></div>
     <div class="chair-seat" style="top: ${seat.chairSeatTop || -6}px;"></div>
   </div>
   <div class="name">${hasStudent?name:''}</div>
