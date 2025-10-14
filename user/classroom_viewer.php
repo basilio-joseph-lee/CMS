@@ -383,18 +383,22 @@ function applyThemeAndShape(color, shape){
     {id:'ocean',d1:'#b3e5fc',d2:'#4fc3f7',seat:'#b2f5ea',back:'#80deea',cb:'#0ea5e9'},
     {id:'spring',d1:'#d9f99d',d2:'#86efac',seat:'#bbf7d0',back:'#86efac',cb:'#16a34a'},
     {id:'berry',d1:'#f5d0fe',d2:'#e879f9',seat:'#fde68a',back:'#fbcfe8',cb:'#be185d'}
-    // add other themes if needed
   ];
+
   const SHAPES=[
-    {id:'classic',v:{bw:'70px',bh:'28px',br:'4px',sw:'70px',sh:'18px',sr:'4px',sm:'-6px'}},
-    {id:'rounded',v:{bw:'72px',bh:'34px',br:'18px',sw:'76px',sh:'22px',sr:'9999px',sm:'-4px'}}
-    // add other shapes if needed
+    {id:'classic',v:{bw:'70px',bh:'28px',br:'4px',sw:'70px',sh:'18px',sr:'4px',sm:'-6px'}, ex:[]},
+    {id:'rounded',v:{bw:'72px',bh:'34px',br:'18px',sw:'76px',sh:'22px',sr:'9999px',sm:'-4px'}, ex:[]},
+    {id:'winged',v:{bw:'70px',bh:'30px',br:'10px',sw:'70px',sh:'18px',sr:'8px',sm:'-6px'}, ex:['extra-wings']},
+    {id:'saddle',v:{bw:'68px',bh:'26px',br:'8px',sw:'72px',sh:'20px',sr:'16px',sm:'-6px'}, ex:['extra-notch']},
+    {id:'tripod',v:{bw:'0px',bh:'0px',br:'0',sw:'44px',sh:'44px',sr:'9999px',sm:'4px'}, ex:['extra-tripod','no-back']},
+    {id:'split',v:{bw:'72px',bh:'22px',br:'6px',sw:'70px',sh:'18px',sr:'6px',sm:'-6px'}, ex:['extra-splitback']},
+    {id:'lattice',v:{bw:'70px',bh:'30px',br:'8px',sw:'70px',sh:'18px',sr:'8px',sm:'-6px'}, ex:['extra-stripes']}
   ];
 
   const t = THEMES.find(x=>x.id===color) || THEMES[0];
   const s = SHAPES.find(x=>x.id===shape) || SHAPES[0];
-
   const stage = document.getElementById('stage');
+
   stage.style.setProperty('--desk-grad-1', t.d1);
   stage.style.setProperty('--desk-grad-2', t.d2);
   stage.style.setProperty('--chair-seat', t.seat);
@@ -408,7 +412,14 @@ function applyThemeAndShape(color, shape){
   stage.style.setProperty('--seat-h', s.v.sh);
   stage.style.setProperty('--seat-r', s.v.sr);
   stage.style.setProperty('--seat-mt', s.v.sm);
+
+  // REMOVE previous extra classes
+  stage.classList.remove('extra-wings','extra-tripod','extra-notch','no-back','extra-splitback','extra-stripes');
+
+  // APPLY current shape extras
+  s.ex.forEach(cls=>stage.classList.add(cls));
 }
+
 
 
 // helper to darken color (optional)
