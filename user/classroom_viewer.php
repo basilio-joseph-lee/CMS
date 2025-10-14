@@ -583,85 +583,70 @@ function shadeColor(color, percent) {
 }
 
     // Render seats (view-only)
- function renderSeats(){
-  const seatLayer = document.getElementById('seatLayer');
-  seatLayer.innerHTML = '';
-  const M = stageMetrics();
-
-  seats = seats.map((s,i)=>{
+function renderSeats(){
+  seatLayer.innerHTML='';
+  const M=stageMetrics();
+  seats=seats.map((s,i)=>{
     if(s.x==null || s.y==null){
-      const c = i % Math.max(1,M.maxCols);
-      const r = Math.floor(i/Math.max(1,M.maxCols));
-      s.x = M.pad + c*(M.seatW+M.gapX);
-      s.y = M.pad + r*(M.seatH+M.gapY);
+      const c=i%Math.max(1,M.maxCols), r=Math.floor(i/Math.max(1,M.maxCols));
+      s.x=M.pad+c*(M.seatW+M.gapX); s.y=M.pad+r*(M.seatH+M.gapY);
     }
     return s;
   });
 
+  const colsForBias=Math.max(1,M.maxCols);
+
   seats.forEach((seat,i)=>{
-    const node = document.createElement('div');
-    node.className = 'seat';
-    node.dataset.seatNo = seat.seat_no;
-    node.dataset.studentId = seat.student_id ?? '';
-    node.style.left = (seat.x ?? 14) + 'px';
-    node.style.top  = (seat.y ?? 14) + 'px';
+    const node=document.createElement('div');
+    node.className='seat draggable';
+    node.dataset.seatNo=seat.seat_no;
+    node.dataset.studentId=seat.student_id ?? '';
+    node.style.left=(seat.x ?? 14)+'px';
+    node.style.top=(seat.y ?? 14)+'px';
 
-    const s = students.find(x => x.student_id == seat.student_id);
-    const hasStudent = !!s;
+    const s=students.find(x=>x.student_id==seat.student_id);
+    const hasStudent=!!s;
     const img = fixAvatar(s?.avatar_url);
-    const name = s?.fullname || '';
+    const name = s?.fullname || 'Empty';
 
-    const st = hasStudent ? behaviorMap[String(s.student_id)] : null;
-    const isAway = !!(st && st.is_away);
+    const colIndex=i%colsForBias; 
+    const biasClass=(colIndex%2===0)?'tilt-left':'tilt-right';
 
-    let overlayText = '';
-    switch ((st?.action || '').toLowerCase()) {
-      case 'restroom': overlayText='🚻'; break;
-      case 'snack': overlayText='🍎'; break;
-      case 'lunch_break': overlayText='🍱'; break;
-      case 'out_time': overlayText='🚪'; break;
-      case 'water_break': overlayText='💧'; break;
-      case 'not_well': overlayText='🤒'; break;
-      case 'borrow_book': overlayText='📚'; break;
-      case 'return_material': overlayText='📦'; break;
-      case 'help_request': overlayText='✋'; break;
-      case 'participated': overlayText='✅'; break;
-      case 'im_back': overlayText='⬅️'; break;
-    }
-
-    const bubbleTitle = st && st.timestamp ? `${st.label || ''} — ${st.timestamp}` : (st && st.label ? st.label : '');
+    const st=hasStudent ? behaviorMap[String(s.student_id)] : null;
+    const actionKey=st ? String(st.action||'').toLowerCase() : '';
+    const individuallyAway = !!(st && (st.is_away || AWAY_ACTIONS.has(actionKey)));
+    const isBackOverride   = backSet.has(String(seat.student_id));
+    const overlayApplies   = !!globalAction && !isBackOverride && !(st && !individuallyAway);
+    const isAway           = isBackOverride ? false : (overlayApplies || individuallyAway);
 
     node.innerHTML = `
-      <div class="card ${hasStudent?'has-student':'empty'} ${isAway?'is-away':''} ${seat.student_id==MY_ID?'me':''}">
-        ${hasStudent?`
-        <div class="avatar-wrapper">
-          <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';"/>
-          ${overlayText?`<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>`:''}
-        </div>`:''}
+      <div class="card ${hasStudent?'has-student':'empty'} ${isAway?'is-away':''}">
+        ${hasStudent ? `
+          <div class="avatar-wrapper">
+            <div class="avatar-bias ${biasClass}">
+              <img src="${img}" class="avatar-img"
+              onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';"
+              style="--headDur:${(2.4+Math.random()*1.4).toFixed(2)}s;animation-delay:${(Math.random()*1.8).toFixed(2)}s;" />
+            </div>
+            ${(()=>{ const txt = overlayApplies ? actionOverlayText() : (individuallyAway ? actionText(actionKey) : modeText()); return txt ? `<div class="status-bubble">${txt}</div>` : '' })()}
+          </div>` : ''}
         <div class="desk-rect"></div>
-        <div class="chair-back"></div>
-        <div class="chair-seat"></div>
+
+        <!-- Chair layers -->
+        <div class="chair-back" style="position:absolute; top:-20px; z-index:1;"></div>
+        <div class="chair-seat" style="position:absolute; top:-8px; z-index:2;"></div>
       </div>
-      <div class="name">${hasStudent?name:''}</div>
+      <div class="name ${hasStudent?'':'is-empty'}">${hasStudent?name:''}</div>
     `;
 
+    if (hasStudent) node.classList.add('has-student'); else node.classList.remove('has-student');
     if(isAway) node.classList.add('is-away'); else node.classList.remove('is-away');
-    if(seat.student_id==MY_ID) node.classList.add('me');
-
-    node.addEventListener('click', ()=>{
-      if(!seat.student_id) return;
-      const stu = students.find(x=>x.student_id==seat.student_id);
-      const st = behaviorMap[String(seat.student_id)]||{};
-      openStudentModal(stu, st);
-    });
 
     seatLayer.appendChild(node);
   });
 
-  // update stats
-  const total = students.length;
-  const seatedCount = seats.reduce((a,s)=>a+(s.student_id!=null?1:0),0);
-  document.getElementById('stats').textContent = `Students: ${total} • Seated: ${seatedCount} • Chairs: ${seats.length}`;
+  bindMenus();
+  enableDragging();
 }
 
 
