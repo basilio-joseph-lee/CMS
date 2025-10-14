@@ -313,6 +313,14 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
 .chair-back::before { left: 8px; }
 .chair-back::after  { right: 8px; }
+.chair-back {
+  position: relative;
+  z-index: 50;  /* above desk (desk z-index=1) */
+}
+.chair-seat {
+  position: relative;
+  z-index: 51;  /* above desk but below legs if needed */
+}
 
 
 /* Extra shapes / pseudo-elements for special chairs */
