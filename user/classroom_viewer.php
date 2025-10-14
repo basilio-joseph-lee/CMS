@@ -345,6 +345,15 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     /* helper: hide names toggle */
     .hide-names .name { display:none !important; }
     .hide-names .status-bubble { left:calc(100% + 6px); } /* keep bubble aligned */
+/* Tilt effect for seats */
+.seat {
+  perspective: 800px; /* give some depth */
+  transition: transform 0.3s ease;
+}
+
+.seat:hover {
+  transform: rotateX(10deg) rotateY(10deg) scale(1.05);
+}
 
     /* top-right controls */
     .top-controls { position: absolute; right: 12px; top: 12px; z-index: 60; display:flex; gap:8px; }
@@ -738,6 +747,28 @@ applyThemeAndShape(T.chair_color, T.chair_shape);
       seats = positions.map((p,i)=>({seat_no:i+1, student_id: assigned[i]||null, x:p.x, y:p.y}));
       renderSeats();
     });
+
+    function enableSeatTilt() {
+  const allSeats = document.querySelectorAll('.seat');
+  allSeats.forEach(seat => {
+    seat.addEventListener('mousemove', (e) => {
+      const rect = seat.getBoundingClientRect();
+      const x = e.clientX - rect.left - rect.width/2;
+      const y = e.clientY - rect.top - rect.height/2;
+      const rotateX = (-y/rect.height)*15; // max tilt
+      const rotateY = (x/rect.width)*15;
+      seat.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.05)`;
+    });
+    seat.addEventListener('mouseleave', () => {
+      seat.style.transform = 'rotateX(0) rotateY(0) scale(1)';
+    });
+  });
+}
+
+// Call after seats are rendered
+renderSeats();
+enableSeatTilt();
+
   </script>
 </body>
 </html>
