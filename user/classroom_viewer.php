@@ -281,35 +281,6 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   position:relative;
   z-index:0;
 }
-/* Chair structure: basic legs for classic chair */
-.chair-back::before,
-.chair-back::after {
-  content:"";
-  position:absolute;
-  width:6px;
-  height:28px;
-  background:var(--chair-back,#9ca3af);
-  bottom:-28px;
-  border-radius:2px;
-}
-
-.chair-back::before { left:10px; }
-.chair-back::after  { right:10px; }
-
-/* Tripod, notch, wings, splitback, and extra chairs will override/add as before */
-#stage.extra-tripod .chair-seat::before,
-#stage.extra-tripod .chair-seat::after{
-  content:""; position:absolute; bottom:-16px; width:6px; height:16px; background:var(--chair-border); border-radius:3px;
-}
-#stage.extra-tripod .chair-seat::before{ left:26%; transform:rotate(6deg); }
-#stage.extra-tripod .chair-seat::after{ right:26%; transform:rotate(-6deg); }
-
-#stage.extra-wings .chair-back::before,
-#stage.extra-wings .chair-back::after {
-  content:""; position:absolute; top:4px; width:10px; height:18px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:8px;
-}
-#stage.extra-wings .chair-back::before{ left:-12px; } 
-#stage.extra-wings .chair-back::after{ right:-12px; }
 
 
 /* Extra shape classes on #stage will apply as in teacher view */
@@ -327,6 +298,39 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 #stage.extra-splitback .chair-back::before, #stage.extra-splitback .chair-back::after{ content:""; position:absolute; top:-22px; width:30px; height:20px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:4px; }
 #stage.extra-splitback .chair-back::before{ left:0; } #stage.extra-splitback .chair-back::after { right:0; }
 
+/* ---- Chair legs / stand like teacher simulator ---- */
+.chair-back::before,
+.chair-back::after {
+  content: "";
+  position: absolute;
+  width: 6px;       /* thickness of leg */
+  height: 28px;     /* length of leg */
+  background: var(--chair-back, #9ca3af);
+  bottom: -28px;
+  border-radius: 2px;
+}
+
+.chair-back::before { left: 10px; }
+.chair-back::after  { right: 10px; }
+
+/* Extra shapes / pseudo-elements for special chairs */
+#stage.no-back .chair-back { display: none; }
+#stage.extra-tablet .chair-seat::after { content:""; position:absolute; right:-18px; top:-10px; width:28px; height:16px; background:var(--desk-grad-1); border:2px solid var(--desk-border); border-radius:5px; }
+#stage.extra-post .chair-seat::after { content:""; position:absolute; left:50%; transform:translateX(-50%); bottom:-22px; width:6px; height:24px; background:var(--chair-border); border-radius:3px; }
+#stage.extra-tripod .chair-seat::before,
+#stage.extra-tripod .chair-seat::after { content:""; position:absolute; bottom:-16px; width:6px; height:16px; background:var(--chair-border); border-radius:3px; }
+#stage.extra-tripod .chair-seat::before { left:26%; transform:rotate(6deg); }
+#stage.extra-tripod .chair-seat::after { right:26%; transform:rotate(-6deg); }
+#stage.extra-wings .chair-back::before,
+#stage.extra-wings .chair-back::after { content:""; position:absolute; top:4px; width:10px; height:18px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:8px; }
+#stage.extra-wings .chair-back::before { left:-12px; } 
+#stage.extra-wings .chair-back::after { right:-12px; }
+#stage.extra-stripes .chair-back { background: repeating-linear-gradient(90deg, rgba(0,0,0,.10) 0 6px, rgba(255,255,255,.12) 6px 12px), var(--chair-back); }
+#stage.extra-notch .chair-seat::after { content:""; position:absolute; left:50%; transform:translateX(-50%); top:-6px; width:14px; height:8px; background:var(--chair-seat); border:2px solid var(--chair-border); border-bottom:none; border-radius:10px 10px 0 0; }
+#stage.extra-splitback .chair-back { background:transparent; border-color:transparent; height:0; }
+#stage.extra-splitback .chair-back::before, #stage.extra-splitback .chair-back::after { content:""; position:absolute; top:-22px; width:30px; height:20px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:4px; }
+#stage.extra-splitback .chair-back::before { left:0; } 
+#stage.extra-splitback .chair-back::after { right:0; }
 
     /* helper: hide names toggle */
     .hide-names .name { display:none !important; }
