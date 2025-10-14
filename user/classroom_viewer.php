@@ -215,7 +215,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     .desk-rect{ width:90px; height:40px; border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; background:linear-gradient(180deg,#e6cfa7,#d2a86a); border:2px solid #a16a2a; }
     .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; }
     .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; border-radius:9999px; }
-    .seat .name{ margin-top:-18px; font-size:12px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; }
+    .seat .name{ margin-top:4px; font-size:13px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; position:relative; z-index:3; }
     .status-bubble{ position:absolute; top:6px; left:calc(100% + 8px); background:#fff; border:2px solid #111; border-radius:9999px; padding:8px 12px; font-size:12px; font-weight:700; white-space:nowrap; box-shadow:0 2px 4px rgba(0,0,0,.2); pointer-events:none; }
     .seat.is-away .avatar-img { visibility: hidden; }
     .seat.is-away .name { opacity: 0.6; visibility: visible; color: black }
@@ -249,6 +249,11 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   </style>
 </head>
 <body>
+  <div class="flex justify-end p-4">
+    <a href="dashboard.php" class="bg-green-700 hover:bg-green-800 text-white text-sm px-4 py-2 rounded-lg shadow">
+      ← Back
+    </a>
+  </div>
   <div class="p-4">
     <div class="mb-4">
       <div class="text-sm text-gray-700">Class: <b><?=htmlspecialchars($class_name)?></b> • <?=htmlspecialchars($subject_name)?> • <?=htmlspecialchars($year_label)?></div>
