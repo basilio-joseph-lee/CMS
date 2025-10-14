@@ -235,8 +235,61 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     #stage{ position:relative; min-height:540px; height:72vh; background: url('../../img/bg-8.png') center center / cover no-repeat; border-radius:12px; overflow:hidden; box-shadow: inset 0 0 20px rgba(0,0,0,0.15); }
     #seatLayer{ position:relative; width:100%; height:100%; }
     .seat{ width:100px; position:absolute; user-select:none; }
-    .desk-rect{ width:90px; height:40px; border-radius:6px 6px 2px 2px; margin:0 auto; position:relative; z-index:1; background: linear-gradient(180deg, var(--desk-grad-1), var(--desk-grad-2));
- border:2px solid #a16a2a; }
+    .desk-rect{
+  width:var(--seat-w,90px);
+  height:var(--seat-h,40px);
+  background:linear-gradient(180deg,var(--desk-grad-1,#e6cfa7),var(--desk-grad-2,#d2a86a));
+  border:2px solid var(--desk-border,#a16a2a);
+  border-radius:6px 6px 2px 2px;
+  margin:0 auto;
+  position:relative;
+  z-index:1;
+}
+.desk-rect::before,
+.desk-rect::after{
+  content:"";
+  position:absolute;
+  width:6px; height:28px;
+  background:var(--leg,#8b5e34);
+  bottom:-28px;
+}
+.desk-rect::before{ left:10px; }
+.desk-rect::after{ right:10px; }
+
+.chair-back{
+  width:var(--back-w,70px);
+  height:var(--back-h,28px);
+  background:var(--chair-back,#9ca3af);
+  border:2px solid var(--chair-border,#6b7280);
+  border-radius:var(--back-r,4px);
+  margin:0 auto;
+  position:relative;
+}
+.chair-seat{
+  width:var(--seat-w,70px);
+  height:var(--seat-h,18px);
+  background:var(--chair-seat,#d1d5db);
+  border:2px solid var(--chair-border,#6b7280);
+  border-radius:var(--seat-r,4px);
+  margin:var(--seat-mt,-6px) auto 0;
+  position:relative;
+  z-index:0;
+}
+
+/* Extra shape classes on #stage will apply as in teacher view */
+#stage.no-back .chair-back{ display:none; }
+#stage.extra-tablet .chair-seat::after{ content:""; position:absolute; right:-18px; top:-10px; width:28px; height:16px; background:var(--desk-grad-1); border:2px solid var(--desk-border); border-radius:5px; }
+#stage.extra-post .chair-seat::after{ content:""; position:absolute; left:50%; transform:translateX(-50%); bottom:-22px; width:6px; height:24px; background:var(--chair-border); border-radius:3px; }
+#stage.extra-tripod .chair-seat::before, #stage.extra-tripod .chair-seat::after{ content:""; position:absolute; bottom:-16px; width:6px; height:16px; background:var(--chair-border); border-radius:3px; }
+#stage.extra-tripod .chair-seat::before{ left:26%; transform:rotate(6deg); }
+#stage.extra-tripod .chair-seat::after{ right:26%; transform:rotate(-6deg); }
+#stage.extra-wings .chair-back::before, #stage.extra-wings .chair-back::after{ content:""; position:absolute; top:4px; width:10px; height:18px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:8px; }
+#stage.extra-wings .chair-back::before{ left:-12px; } #stage.extra-wings .chair-back::after{ right:-12px; }
+#stage.extra-stripes .chair-back{ background: repeating-linear-gradient(90deg, rgba(0,0,0,.10) 0 6px, rgba(255,255,255,.12) 6px 12px), var(--chair-back); }
+#stage.extra-notch .chair-seat::after{ content:""; position:absolute; left:50%; transform:translateX(-50%); top:-6px; width:14px; height:8px; background:var(--chair-seat); border:2px solid var(--chair-border); border-bottom:none; border-radius:10px 10px 0 0; }
+#stage.extra-splitback .chair-back{ background:transparent; border-color:transparent; height:0; }
+#stage.extra-splitback .chair-back::before, #stage.extra-splitback .chair-back::after{ content:""; position:absolute; top:-22px; width:30px; height:20px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:4px; }
+#stage.extra-splitback .chair-back::before{ left:0; } #stage.extra-splitback .chair-back::after { right:0; }
     .avatar-wrapper{ position:absolute; top:-20px; left:50%; transform:translateX(-50%); width:60px; height:60px; z-index:2; }
     .avatar-img{ width:100%; height:100%; object-fit:contain; display:block; border-radius:9999px; }
     .seat .name{ margin-top:4px; font-size:13px; text-align:center; font-weight:700; color:#1f2937; pointer-events:none; position:relative; z-index:3; }
