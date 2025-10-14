@@ -1,171 +1,273 @@
-<?php
-// classroom_viewer.php — safe DB include + inline roster for student viewer
+dashboard "<?php
+/**
+ * STUDENT DASHBOARD — primary student UI
+ * Flow: face_login.php → select_subject.php → dashboard.php
+ */
+session_name('CMS_STUDENT');
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+include "../config/db.php";
 
-// try a few likely DB include paths (adjust if you know the exact path)
-$db_included = false;
-$possible_paths = [
-    __DIR__ . '/../config/db.php',    // typical: /user/../config/db.php
-    __DIR__ . '/../../config/db.php', // if called from /user/somefolder
-    __DIR__ . '/../config/connection.php',
-    __DIR__ . '/../../config/connection.php',
-    __DIR__ . '/config/db.php'
-];
-foreach ($possible_paths as $p) {
-    if (file_exists($p)) {
-        try {
-            require_once $p;
-            $db_included = true;
-            break;
-        } catch (Throwable $e) {
-            // include might emit warnings — we'll continue and try others
-            error_log("DB include failed for $p: " . $e->getMessage());
-        }
-    }
-}
+if (!isset($_SESSION['student_id'])) { header("Location: ../index.php"); exit; }
 
-// Start session after includes so session config from db.php (if any) is available
-session_start();
-
-// Session / context
-$teacherName     = $_SESSION['teacher_fullname'] ?? ($_SESSION['teacher_name'] ?? 'Teacher');
-$subject_id      = intval($_SESSION['subject_id'] ?? 0);
-$advisory_id     = intval($_SESSION['advisory_id'] ?? 0);
-$school_year_id  = intval($_SESSION['school_year_id'] ?? 0);
-$subject_name    = $_SESSION['subject_name'] ?? 'Subject';
-$class_name      = $_SESSION['class_name'] ?? 'Section';
-$year_label      = $_SESSION['year_label'] ?? 'SY';
-
-// Prepare fallback arrays
-$students = [];
-$behavior = [];
-
-// Verify $db exists and looks like a PDO (or mysqli). If not, we skip DB queries.
-$db_available = false;
-if (isset($db) && is_object($db)) {
-    // common pattern: $db is a PDO instance
-    if ($db instanceof PDO) $db_available = true;
-    // or the project may use mysqli with variable $conn or $mysqli
-} elseif (isset($mysqli) && $mysqli instanceof mysqli) {
-    $db = $mysqli;
-    $db_available = true;
-} elseif (isset($conn) && is_object($conn)) {
-    $db = $conn;
-    $db_available = true;
-}
-
-// If DB available, run queries (wrapped in try/catch)
-if ($db_available) {
-    try {
-        // fetch roster for this student's section — adapt table/columns to your schema
-        $sql = "SELECT student_id, fullname, avatar_url FROM students
-                WHERE subject_id = ? AND advisory_id = ? AND school_year_id = ?
-                ORDER BY fullname";
-        // If PDO:
-        if ($db instanceof PDO) {
-            $stmt = $db->prepare($sql);
-            $stmt->execute([$subject_id, $advisory_id, $school_year_id]);
-            $students = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } else {
-            // If mysqli: use prepared statement
-            if ($db->prepare) {
-                $stmt = $db->prepare($sql);
-                $stmt->bind_param('iii', $subject_id, $advisory_id, $school_year_id);
-                $stmt->execute();
-                $res = $stmt->get_result();
-                $students = $res->fetch_all(MYSQLI_ASSOC);
-                $stmt->close();
-            }
-        }
-    } catch (Throwable $e) {
-        error_log("Error fetching students in classroom_viewer.php: " . $e->getMessage());
-        $students = [];
-    }
-
-    try {
-        // fetch current behavior statuses if you have a behavior table
-        $sql = "SELECT student_id, action_type, timestamp, label FROM behavior
-                WHERE subject_id = ? AND advisory_id = ? AND school_year_id = ?";
-        if ($db instanceof PDO) {
-            $stmt = $db->prepare($sql);
-            $stmt->execute([$subject_id, $advisory_id, $school_year_id]);
-            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } else {
-            $stmt = $db->prepare($sql);
-            $stmt->bind_param('iii', $subject_id, $advisory_id, $school_year_id);
-            $stmt->execute();
-            $res = $stmt->get_result();
-            $rows = $res->fetch_all(MYSQLI_ASSOC);
-            $stmt->close();
-        }
-        foreach ($rows as $r) {
-            $behavior[intval($r['student_id'])] = [
-                'action' => $r['action_type'] ?? '',
-                'label' => $r['label'] ?? '',
-                'timestamp' => $r['timestamp'] ?? null
-            ];
-        }
-    } catch (Throwable $e) {
-        error_log("Error fetching behavior in classroom_viewer.php: " . $e->getMessage());
-        $behavior = [];
-    }
-} else {
-    // DB was not available; log helpful debug info so you can fix the include path
-    error_log("classroom_viewer.php: DB not available. Tried paths: " . implode(', ', $possible_paths));
-    // Leave $students and $behavior as empty arrays so the page still renders.
-}
-
+$student_id     = (int)$_SESSION['student_id'];
+$fullname       = $_SESSION['fullname'] ?? 'Student';
+$subject_id     = (int)($_SESSION['subject_id'] ?? 0);
+$advisory_id    = (int)($_SESSION['advisory_id'] ?? 0);
+$school_year_id = (int)($_SESSION['school_year_id'] ?? 0);
+$subject_name   = $_SESSION['subject_name'] ?? 'Subject';
+$class_name     = $_SESSION['class_name'] ?? 'Section';
+$year_label     = $_SESSION['year_label'] ?? 'SY';
 ?>
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>2D Classroom Simulator — View</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    /* minimal CSS — keep as you had */
-    body{ background:#fefae0; font-family:'Comic Sans MS',cursive,sans-serif; }
-    .wrap{ max-width:1200px; margin:0 auto; padding:18px; }
-    /* ... keep your stage styles or link to existing CSS ... */
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Student Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{
+    /* keep palette in sync with simulator */
+    --brand:#bc6c25;       /* title orange */
+    --panel:#ffffff;
+    --bg:#fefae0;
+    --accent:#386641;      /* green from your sidebar */
+  }
+  body{ background:var(--bg); font-family:'Comic Sans MS', cursive, sans-serif; }
+
+  /* Shell */
+  .wrap{ max-width:900px; margin-inline:auto; }
+
+  /* Glassy header */
+  .hero{
+    background:linear-gradient(180deg,#fff8 0,#fff0 100%), url('../img/bg-8.png') center/cover no-repeat;
+    border-radius:1.25rem;
+    box-shadow: inset 0 0 16px rgba(0,0,0,.08);
+  }
+
+  /* Cards */
+  .card{
+    background:var(--panel);
+    border-radius:1.25rem;
+    box-shadow:0 10px 30px rgba(0,0,0,.08);
+  }
+
+  /* Action tiles */
+  .tile{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:.35rem; text-align:center; padding:1.1rem .9rem; border-radius:1rem;
+    font-weight:800; box-shadow:0 6px 18px rgba(0,0,0,.06);
+    transform:translateY(0); transition:transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+  }
+  .tile:active{ transform:translateY(2px); box-shadow:0 4px 12px rgba(0,0,0,.08); }
+  .tile[disabled]{ opacity:.6; pointer-events:none; }
+
+  /* Colors per action */
+  .t-yellow{ background:#fef08a; }
+  .t-pink  { background:#fbcfe8; }
+  .t-green { background:#86efac; }
+  .t-blue  { background:#93c5fd; }
+  .t-cyan  { background:#a5f3fc; }
+  .t-rose  { background:#fecdd3; }
+
+  .tile span.emoji{ font-size:1.9rem; line-height:1; }
+  .tile .label{ font-size:.95rem; color:#1f2937; }
+
+  /* Status chip */
+  .chip{
+    display:inline-flex; align-items:center; gap:.4rem;
+    background:#ecfccb; color:#14532d; border:2px solid #16a34a;
+    border-radius:9999px; padding:.35rem .7rem; font-weight:800;
+  }
+  .chip.bad{ background:#fee2e2; color:#7f1d1d; border-color:#ef4444; }
+
+  /* Footer nav */
+  .bar{
+    position:sticky; bottom:0; left:0; right:0; z-index:10;
+    background:#ffffffcc; backdrop-filter:blur(6px);
+    border-top:1px solid #0000000f;
+  }
+
+  /* Toast */
+  #toast{ display:none; }
+</style>
 </head>
-<body>
-  <div class="wrap">
-    <h1 style="font-size:22px;color:#bc6c25">🏫 2D Classroom Simulator — View</h1>
-    <p><?= htmlspecialchars($class_name) ?> • <?= htmlspecialchars($subject_name) ?> • <?= htmlspecialchars($year_label) ?></p>
-    <div id="stage" style="min-height:360px;border-radius:12px;background:url('../img/bg-8.png') center/cover no-repeat;padding:12px;">
-      <div id="seatLayer"></div>
+
+<body class="min-h-screen p-4 md:p-6">
+  <!-- Header -->
+  <div class="wrap hero p-5 md:p-7 mb-5">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      <div>
+        <h1 class="text-3xl md:text-4xl font-black" style="color:var(--brand)">🏫 Student Dashboard</h1>
+        <p class="text-sm text-gray-700 mt-1">
+          <?= htmlspecialchars($class_name) ?> • <?= htmlspecialchars($subject_name) ?> • <?= htmlspecialchars($year_label) ?>
+        </p>
+        <p class="text-gray-700 mt-2">Welcome, <b><?= htmlspecialchars($fullname) ?></b></p>
+      </div>
+      <div class="card px-4 py-3">
+        <div class="text-xs text-gray-500 font-bold uppercase">Current status</div>
+        <div class="mt-1">
+          <span id="statusChip" class="chip" aria-live="polite">Loading…</span>
+        </div>
+        <div id="lastTime" class="text-xs text-gray-500 mt-1">—</div>
+      </div>
     </div>
-    <div id="stats" style="margin-top:12px"></div>
   </div>
 
+  <!-- Actions -->
+  <div class="wrap grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 md:gap-4 mb-6">
+    <button class="tile t-yellow" data-action="restroom"  aria-label="Restroom">
+      <span class="emoji">🚻</span><div class="label">Restroom</div>
+    </button>
+    <button class="tile t-pink"   data-action="snack"     aria-label="Snack">
+      <span class="emoji">🍎</span><div class="label">Snack</div>
+    </button>
+    <button class="tile t-cyan"   data-action="water_break" aria-label="Water Break">
+      <span class="emoji">💧</span><div class="label">Water</div>
+    </button>
+    <button class="tile t-rose"   data-action="not_well"  aria-label="Not Feeling Well">
+      <span class="emoji">🤒</span><div class="label">Not Well</div>
+    </button>
+    <button class="tile t-green"  data-action="lunch_break" aria-label="Lunch Break">
+      <span class="emoji">🍱</span><div class="label">Lunch</div>
+    </button>
+    <button class="tile t-blue"   data-action="im_back"   aria-label="I’m Back">
+      <span class="emoji">🟢</span><div class="label">I’m Back</div>
+    </button>
+  </div>
+
+  <!-- Status / tips -->
+  <div class="wrap grid md:grid-cols-2 gap-4">
+    <div class="card p-5">
+      <div class="text-xl font-black mb-2">🧾 Details</div>
+      <div id="statusText" class="text-gray-700">Loading…</div>
+    </div>
+
+    <div class="card p-5">
+      <div class="text-xl font-black mb-2">💡 Tips</div>
+      <ul class="list-disc pl-5 text-gray-700 space-y-1">
+        <li>Tap an action when you leave (restroom, water, lunch).</li>
+        <li>Tap <b>I’m Back</b> as soon as you return.</li>
+        <li>Your teacher sees your status instantly.</li>
+      </ul>
+      <div class="mt-4">
+        <button onclick="location.href='select_subject.php'" class="underline text-gray-600 text-sm">← Back to Subjects</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom bar: quick “I’m Back” -->
+  <div class="bar mt-6">
+    <div class="wrap flex items-center justify-between px-4 py-3">
+      <div class="text-sm text-gray-700">Need to clear your status?</div>
+      <button id="quickBack" class="tile t-blue !py-2 !px-3 !rounded-full !flex-row !gap-2">
+        <span class="emoji">🟢</span><span class="label font-black">I’m Back</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed top-5 right-5 px-4 py-3 rounded-xl shadow text-white font-bold"></div>
+
 <script>
-  // server-inlined arrays for client JS to use (safe-encoded)
-  const SERVER_STUDENTS = <?= json_encode($students, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
-  const SERVER_BEHAVIOR = <?= json_encode($behavior, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;
+const student_id = <?= $student_id ?>;
+const statusChip = document.getElementById('statusChip');
+const statusText = document.getElementById('statusText');
+const lastTime   = document.getElementById('lastTime');
+const toastBox   = document.getElementById('toast');
+const ACTION_LABELS = {
+  restroom:'Restroom', snack:'Snack', lunch_break:'Lunch Break',
+  water_break:'Water Break', not_well:'Not Feeling Well',
+  im_back:'I’m Back', attendance:'Attendance', out_time:'Out Time'
+};
 
-  // small client-side code to render seats simply (you can replace with full viewer code)
-  const stage = document.getElementById('stage');
-  const layer = document.getElementById('seatLayer');
-  const stats = document.getElementById('stats');
+function toast(msg,type='ok'){
+  toastBox.textContent = msg;
+  toastBox.style.background = type==='err' ? '#ef4444' : '#16a34a';
+  toastBox.style.display = 'block';
+  setTimeout(()=>toastBox.style.display='none', 1800);
+}
 
-  function renderSimple(){
-    layer.innerHTML = '';
-    const students = SERVER_STUDENTS || [];
-    const n = Math.max(6, students.length);
-    for (let i=0;i<n;i++){
-      const s = students[i] || null;
-      const div = document.createElement('div');
-      div.style.display='inline-block';
-      div.style.width='110px';
-      div.style.margin='10px';
-      div.style.textAlign='center';
-      div.innerHTML = s ? `<div style="height:60px"><img src="${s.avatar_url||'../avatar/default-student.png'}" alt="" style="max-height:60px"></div><div style="font-weight:700">${s.fullname}</div>` : `<div style="height:60px"></div><div style="opacity:.5">Empty</div>`;
-      layer.appendChild(div);
-    }
-    stats.textContent = `Students: ${students.length} • Chairs: ${n}`;
+function setBusy(b){
+  document.querySelectorAll('[data-action]').forEach(btn=>{
+    if(b){ btn.setAttribute('disabled',''); btn.ariaBusy='true'; }
+    else { btn.removeAttribute('disabled'); btn.ariaBusy='false'; }
+  });
+  document.getElementById('quickBack').toggleAttribute('disabled', b);
+}
+
+function fmtTime(ts){
+  if(!ts) return '—';
+  const d = new Date(ts.replace(' ', 'T')); // handle "YYYY-MM-DD HH:MM:SS"
+  if(Number.isNaN(+d)) return '—';
+  return d.toLocaleString();
+}
+
+function paintStatus(action, ts){
+  if(!action){
+    statusChip.classList.remove('bad');
+    statusChip.textContent = '✅ Present';
+    statusText.textContent = 'You are marked as present with no ongoing action.';
+  }else{
+    const label = ACTION_LABELS[action] || action.replace('_',' ');
+    const isBack = action==='im_back' || action==='attendance';
+    statusChip.classList.toggle('bad', !isBack);
+    statusChip.textContent = (isBack ? '✅ Present' : `📍 ${label}`);
+    statusText.textContent = isBack
+      ? 'Status cleared. Welcome back!'
+      : `You are currently on: ${label}. Tap “I’m Back” once you return.`;
   }
-  renderSimple();
+  lastTime.textContent = ts ? `Last update: ${fmtTime(ts)}` : '—';
+}
+
+// Fetch current behavior
+async function loadStatus(){
+  try{
+    const res = await fetch('../api/get_behavior_status.php', {cache:'no-store'});
+    const data = await res.json();
+    let my = null;
+    if(Array.isArray(data)){
+      my = data.find(r=>String(r.student_id)===String(student_id));
+    }else if(data && data.map){
+      my = data.map[String(student_id)];
+    }
+    paintStatus(my?.action || '', my?.timestamp || '');
+  }catch(e){
+    statusChip.classList.add('bad');
+    statusChip.textContent = 'Offline';
+    statusText.textContent = '⚠️ Cannot reach server. Your actions will try again.';
+  }
+}
+
+// Send behavior action (optimistic)
+async function logAction(action_type){
+  setBusy(true);
+  // optimistic UI
+  paintStatus(action_type, new Date().toISOString());
+  try{
+    const resp = await fetch('../api/log_behavior.php', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ student_id, action_type })
+    });
+    const r = await resp.json();
+    toast(r?.message || 'Saved');
+    await loadStatus(); // reconcile
+  }catch(e){
+    toast('Network error','err');
+  }finally{
+    setBusy(false);
+  }
+}
+
+document.querySelectorAll('[data-action]').forEach(btn=>{
+  btn.addEventListener('click', ()=> logAction(btn.dataset.action));
+});
+document.getElementById('quickBack').addEventListener('click', ()=> logAction('im_back'));
+
+loadStatus();
+setInterval(loadStatus, 4000);
 </script>
 </body>
 </html>
+"
