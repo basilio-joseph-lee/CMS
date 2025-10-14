@@ -1,3 +1,3 @@
 <?php
-header("Location: /CMS/index.php");
+header("Location: /https://myschoolness.site//index.php");
 exit;
