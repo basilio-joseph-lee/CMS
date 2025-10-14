@@ -1,5 +1,6 @@
 <?php
-include "../../config/db.php";
+include __DIR__ . "/../config/db.php";
+
 session_start();
 
 // viewing doesn't require teacher login; still use session values if present
