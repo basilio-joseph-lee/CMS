@@ -125,12 +125,10 @@ if (isset($_GET['action']) && (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strto
     exit;
   }
 
-  // GET BEHAVIOR / STATUS (recent actions per student)
-// GET BEHAVIOR / STATUS (latest status per student)
-// GET BEHAVIOR / STATUS (latest status per student)
-if ($action === 'get_behavior') {
+  // GET BEHAVIOR / STATUS (latest status per student)
+  if ($action === 'get_behavior') {
     function normalize_action($a) {
-      $a = strtolower(trim($a));
+      $a = strtolower(trim((string)$a));
       $a = str_replace(['-',' '],'_',$a);
       if (str_ends_with($a, '_request')) $a = substr($a, 0, -8);
       return $a;
@@ -148,6 +146,7 @@ if ($action === 'get_behavior') {
         case 'participated':    return '✅ Participated';
         case 'attendance':      return '✅ In';
         case 'log_out':         return '🚪 Logged out';
+        case 'im_back':         return 'Im back';
         default:                return ucfirst(str_replace('_',' ',$a));
       }
     }
@@ -156,7 +155,7 @@ if ($action === 'get_behavior') {
       'not_well','borrow_book','return_material','log_out'
     ];
 
-    // Use same logic as teacher-side: get latest per student
+    // Use teacher-style latest-per-student query (works even if class fields are missing)
     $sql = "
       SELECT bl.student_id, bl.action_type, bl.timestamp
       FROM behavior_logs bl
@@ -184,8 +183,7 @@ if ($action === 'get_behavior') {
 
     echo json_encode(['ok'=>true, 'map'=>$map]);
     exit;
-}
-
+  }
 
 
   // unknown action
@@ -225,6 +223,10 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     .ctl, .btn, .modal, #menu, .tpl, .tab-btn { display:none !important; }
     /* small responsiveness */
     @media (max-width:640px){ .seat{ transform:scale(.9); } }
+
+    /* highlight current student seat */
+    .seat.me .desk-rect { box-shadow: 0 6px 18px rgba(34,197,94,0.12); border-color: #10b981; }
+    .status-bubble[title] { cursor: help; }
   </style>
 </head>
 <body>
@@ -247,7 +249,6 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
     // avatar base detection (best-effort, matches teacher logic)
     const API = (function(){
-      // compute base used by teacher app if needed — but we only need avatar base
       const loc = window.location;
       const path = loc.pathname || '/';
       const base = path.replace(/(\/user\/.*)$/i, '') || '';
@@ -273,6 +274,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     let students = [];
     let seats = [];
     let behaviorMap = {};
+    const MY_ID = <?= json_encode($student_id) ?>;
 
     function toastLog(msg){ console.debug('[classroom view]',msg); }
 
@@ -330,24 +332,43 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
         const img = fixAvatar(s?.avatar_url);
         const name = s?.fullname || '';
 
+        // behavior lookup
         const st = hasStudent ? behaviorMap[String(s.student_id)] : null;
         const act = st ? String(st.action || '').toLowerCase() : '';
-        const individuallyAway = !!(st && (act==='restroom' || act==='snack' || act==='lunch_break' || act==='out_time' || act==='water_break' || act==='not_well' || act==='borrow_book' || act==='return_material' || act==='log_out'));
-        const overlayText = individuallyAway ? (act==='restroom'?'🚻': act==='snack'?'🍎': act==='lunch_break'?'🍱': act==='out_time'?'🚪': act==='help_request'?'✋': act==='participated'?'✅':'•') : '';
+        const isAway = !!(st && st.is_away);
+
+        // map action → emoji
+        let overlayText = '';
+        switch (act) {
+          case 'restroom':        overlayText = '🚻'; break;
+          case 'snack':           overlayText = '🍎'; break;
+          case 'lunch_break':     overlayText = '🍱'; break;
+          case 'out_time':        overlayText = '🚪'; break;
+          case 'water_break':     overlayText = '💧'; break;
+          case 'not_well':        overlayText = '🤒'; break;
+          case 'borrow_book':     overlayText = '📚'; break;
+          case 'return_material': overlayText = '📦'; break;
+          case 'help_request':    overlayText = '✋'; break;
+          case 'participated':    overlayText = '✅'; break;
+          case 'im_back':         overlayText = '⬅️'; break;
+          default:                overlayText = ''; break;
+        }
 
         node.innerHTML = `
-          <div class="card ${hasStudent?'has-student':'empty'} ${individuallyAway ? 'is-away' : ''}">
+          <div class="card ${hasStudent?'has-student':'empty'} ${isAway ? 'is-away' : ''} ${seat.student_id == MY_ID ? 'me' : ''}">
             ${ hasStudent ? `
               <div class="avatar-wrapper">
                 <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';" />
-                ${ overlayText ? `<div class="status-bubble">${overlayText}</div>` : '' }
+                ${ overlayText ? `<div class="status-bubble" title="${st?.label || ''}">${overlayText}</div>` : '' }
               </div>
             ` : '' }
             <div class="desk-rect"></div>
           </div>
           <div class="name">${hasStudent ? name : ''}</div>
         `;
-        if (individuallyAway) node.classList.add('is-away'); else node.classList.remove('is-away');
+
+        if (isAway) node.classList.add('is-away'); else node.classList.remove('is-away');
+        if (seat.student_id == MY_ID) node.classList.add('me'); // highlight current student
         seatLayer.appendChild(node);
       });
 
