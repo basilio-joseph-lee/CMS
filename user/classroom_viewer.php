@@ -368,7 +368,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 
       <!-- top-right small controls (Back + Toggle names) -->
       <div class="top-controls" id="topControls">
-        <a href="../student_dashboard.php" class="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700">← Back</a>
+        <!-- <a href="../student_dashboard.php" class="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700">← Back</a> -->
         <button id="toggleNamesBtn" title="Show / hide student names">Hide names</button>
       </div>
     </div>
