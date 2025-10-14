@@ -817,18 +817,28 @@ const r=await fetch(`${API}/log_behavior.php`,{
     }
 
     // ---------- Save seating ----------
-    async function saveSeating(){
-      seats.forEach((s,i)=>{ s.seat_no=i+1; });
-      const payload=seats.map(s=>({seat_no:s.seat_no,student_id:s.student_id??null,x:Math.round(s.x??0),y:Math.round(s.y??0)}));
-const r=await fetch(`${API}/save_seating.php`,{
-  method:'POST',
-  headers:{ 'Content-Type':'application/json', ...FETCH_OPTS.headers },
-  credentials: FETCH_OPTS.credentials,
-  body: JSON.stringify({seating:payload})
-}).then(r=>r.json()).catch(()=>({ok:false}));
+async function saveSeating(){
+  seats.forEach((s,i)=>{ s.seat_no=i+1; });
+  const payload=seats.map(s=>({
+    seat_no:s.seat_no,
+    student_id:s.student_id??null,
+    x:Math.round(s.x??0),
+    y:Math.round(s.y??0)
+  }));
 
-      if(r?.ok) toast('Layout saved'); else toast(r?.message||'Save failed','error');
-    }
+  const chairColor = localStorage.getItem(COLOR_KEY) || 'classic';
+  const chairShape = localStorage.getItem(SHAPE_KEY) || 'classic';
+
+  const r=await fetch(`${API}/save_seating.php`,{
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', ...FETCH_OPTS.headers },
+    credentials: FETCH_OPTS.credentials,
+    body: JSON.stringify({seating:payload, chair_color: chairColor, chair_shape: chairShape})
+  }).then(r=>r.json()).catch(()=>({ok:false}));
+
+  if(r?.ok) toast('Layout saved'); else toast(r?.message||'Save failed','error');
+}
+
 
     // ---------- Chair + / - ----------
     document.getElementById('plusSeat').onclick=()=>{
