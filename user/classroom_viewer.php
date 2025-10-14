@@ -251,6 +251,13 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     /* highlight current student seat */
     .seat.me .desk-rect { box-shadow: 0 6px 18px rgba(34,197,94,0.12); border-color: #10b981; }
     .status-bubble[title] { cursor: help; }
+    .tilt-head {
+  display: inline-block;
+  transition: transform 0.2s ease;
+  transform-style: preserve-3d;
+  pointer-events: none; /* avatar shouldn’t block clicks */
+}
+
 
     /* modal (simple) */
     .cv-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.45); z-index:9999; }
@@ -571,10 +578,11 @@ function shadeColor(color, percent) {
 node.innerHTML = `
   <div class="card ${hasStudent?'has-student':'empty'} ${isAway ? 'is-away' : ''} ${seat.student_id == MY_ID ? 'me' : ''}">
     ${ hasStudent ? `
-      <div class="avatar-wrapper">
-        <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';" />
-        ${ overlayText ? `<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>` : '' }
-      </div>
+     <div class="avatar-wrapper tilt-head">
+  <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';" />
+  ${ overlayText ? `<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>` : '' }
+</div>
+
     ` : '' }
     <div class="desk-rect"></div>
     <div class="chair-back"></div>
@@ -760,7 +768,25 @@ applyThemeAndShape(T.chair_color, T.chair_shape);
       seat.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.05)`;
     });
     seat.addEventListener('mouseleave', () => {
-      seat.style.transform = 'rotateX(0) rotateY(0) scale(1)';
+      seat.addEventListener('mousemove', (e) => {
+  const rect = seat.getBoundingClientRect();
+  const x = e.clientX - rect.left - rect.width/2;
+  const y = e.clientY - rect.top - rect.height/2;
+  const rotateX = (-y/rect.height)*10; // smaller tilt for seat
+  const rotateY = (x/rect.width)*10;
+  seat.style.transform = `rotateX(${rotateX/3}deg) rotateY(${rotateY/3}deg) scale(1.02)`; // subtle tilt for desk
+
+  // tilt the head more pronounced
+  const head = seat.querySelector('.tilt-head');
+  if(head) head.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg)`;
+});
+
+seat.addEventListener('mouseleave', () => {
+  seat.style.transform = 'rotateX(0) rotateY(0) scale(1)';
+  const head = seat.querySelector('.tilt-head');
+  if(head) head.style.transform = 'rotateX(0) rotateY(0)';
+});
+
     });
   });
 }
