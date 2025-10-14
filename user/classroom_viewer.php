@@ -298,8 +298,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 #stage.extra-splitback .chair-back::before, #stage.extra-splitback .chair-back::after{ content:""; position:absolute; top:-22px; width:30px; height:20px; background:var(--chair-back); border:2px solid var(--chair-border); border-radius:4px; }
 #stage.extra-splitback .chair-back::before{ left:0; } #stage.extra-splitback .chair-back::after { right:0; }
 
-/* ---- Chair legs / stand like teacher simulator ---- */
-/* teacher chair stand */
+/* ---- Chair legs / stand always on top ---- */
 .chair-back::before,
 .chair-back::after {
   content: "";
@@ -308,10 +307,11 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   height: 28px;
   background: var(--chair-back);
   bottom: -28px;
-  border-radius: 4px;  /* maybe slightly rounded */
+  border-radius: 4px;
+  z-index: 1000;      /* <-- force on top of desk / avatar */
 }
 
-.chair-back::before { left: 8px; }   /* adjust position exactly like teacher */
+.chair-back::before { left: 8px; }
 .chair-back::after  { right: 8px; }
 
 
