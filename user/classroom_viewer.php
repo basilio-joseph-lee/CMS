@@ -521,31 +521,26 @@ function shadeColor(color, percent) {
         return s;
       });
 
-seats.forEach((seat,i) => {
-    const node = document.createElement('div');
-    node.className = 'seat';
-    node.dataset.seatNo = seat.seat_no;
-    node.dataset.studentId = seat.student_id ?? '';
-    node.style.left = (seat.x ?? 14) + 'px';
-    node.style.top  = (seat.y ?? 14) + 'px';
+      seats.forEach((seat,i) => {
+        const node = document.createElement('div');
+        node.className = 'seat';
+        node.dataset.seatNo = seat.seat_no;
+        node.dataset.studentId = seat.student_id ?? '';
+        node.style.left = (seat.x ?? 14) + 'px';
+        node.style.top  = (seat.y ?? 14) + 'px';
 
-    const s = students.find(x => x.student_id == seat.student_id);
-    const hasStudent = !!s;
-    const img = fixAvatar(s?.avatar_url);
-    const name = s?.fullname || '';
+        const s = students.find(x => x.student_id == seat.student_id);
+        const hasStudent = !!s;
+        const img = fixAvatar(s?.avatar_url);
+        const name = s?.fullname || '';
 
-    // behavior lookup
-    const st = hasStudent ? behaviorMap[String(s.student_id)] : null;
-    const act = st ? String(st.action || '').toLowerCase() : '';
-    const isAway = !!(st && st.is_away);
+        // behavior lookup
+        const st = hasStudent ? behaviorMap[String(s.student_id)] : null;
+        const act = st ? String(st.action || '').toLowerCase() : '';
+        const isAway = !!(st && st.is_away);
 
-    // teacher mode overlay (quiz/discussion)
-    let overlayText = '';
-    if (st && st.mode) {
-        if (st.mode === 'quiz') overlayText = '📝';
-        else if (st.mode === 'discussion') overlayText = '💬';
-    } else {
-        // fallback: keep previous emojis
+        // map action → emoji
+        let overlayText = '';
         switch (act) {
           case 'restroom':        overlayText = '🚻'; break;
           case 'snack':           overlayText = '🍎'; break;
@@ -560,29 +555,24 @@ seats.forEach((seat,i) => {
           case 'im_back':         overlayText = '⬅️'; break;
           default:                overlayText = ''; break;
         }
-    }
 
-    // bubble title shows label + timestamp + mode
-    const bubbleTitle = st
-        ? `${st.label || ''}${st.mode ? ' • '+st.mode.charAt(0).toUpperCase() + st.mode.slice(1) : ''} — ${st.timestamp || ''}`
-        : '';
+        // bubble title shows label + timestamp where available
+        const bubbleTitle = st && st.timestamp ? `${st.label || ''} — ${st.timestamp}` : (st && st.label ? st.label : '');
 
-    node.innerHTML = `
-      <div class="card ${hasStudent?'has-student':'empty'} ${isAway ? 'is-away' : ''} ${seat.student_id == MY_ID ? 'me' : ''}">
-        ${ hasStudent ? `
-          <div class="avatar-wrapper">
-            <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';" />
-            ${ overlayText ? `<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>` : '' }
-          </div>
-        ` : '' }
-        <div class="desk-rect"></div>
-        <div class="chair-back"></div>
-        <div class="chair-seat"></div>
+node.innerHTML = `
+  <div class="card ${hasStudent?'has-student':'empty'} ${isAway ? 'is-away' : ''} ${seat.student_id == MY_ID ? 'me' : ''}">
+    ${ hasStudent ? `
+      <div class="avatar-wrapper">
+        <img src="${img}" class="avatar-img" onerror="this.onerror=null;this.src='${AVATAR_FALLBACK}';" />
+        ${ overlayText ? `<div class="status-bubble" title="${bubbleTitle}">${overlayText}</div>` : '' }
       </div>
-      <div class="name">${hasStudent ? name : ''}</div>
-    `;
-});
-
+    ` : '' }
+    <div class="desk-rect"></div>
+    <div class="chair-back"></div>
+    <div class="chair-seat"></div>
+  </div>
+  <div class="name">${hasStudent ? name : ''}</div>
+`;
 
 
         if (isAway) node.classList.add('is-away'); else node.classList.remove('is-away');
