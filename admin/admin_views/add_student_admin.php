@@ -150,10 +150,23 @@ $ins->close();
   
 
   // Enroll to class + subject for selected/loaded SY
-  $en = $conn->prepare("INSERT INTO student_enrollments (student_id, advisory_id, school_year_id, subject_id) VALUES (?, ?, ?, ?)");
-  $en->bind_param("iiii", $student_id, $advisory_id, $ENROLL_SY_ID, $subject_id);
-  $en->execute();
-  $en->close();
+// Enroll to class + subject for selected/loaded SY (matches teacher filters)
+$en = $conn->prepare("
+    INSERT INTO student_enrollments (student_id, advisory_id, school_year_id, subject_id)
+    VALUES (?, ?, ?, ?)
+");
+$en->bind_param("iiii", $student_id, $advisory_id, $ENROLL_SY_ID, $subject_id);
+$en->execute();
+$en->close();
+
+// Optional: set a session variable for teacher notification (if you want toast)
+$_SESSION['teacher_notify_new_student'] = [
+    'student_id'   => $student_id,
+    'subject_id'   => $subject_id,
+    'advisory_id'  => $advisory_id,
+    'school_year_id' => $ENROLL_SY_ID
+];
+
 
   $_SESSION['toast'] = '✅ Student successfully added!';
   $_SESSION['toast_type'] = 'success';
