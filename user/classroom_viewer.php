@@ -342,6 +342,55 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     function applyColorTheme(id) {
       const t = THEMES.find(x=>x.id===id) || THEMES[0];
       const stage = document.getElementById('stage');
+
+      // ---- Mirror teacher's chair color + shape from localStorage ----
+const COLOR_KEY = `sim:chairColor:${SY}:${AD}:${SJ}`;
+const SHAPE_KEY = `sim:chairShape:${SY}:${AD}:${SJ}`;
+
+// same theme + shape arrays as teacher (shortened to only apply saved)
+const THEMES = {
+  classic: {d1:'#e6cfa7', d2:'#d2a86a', db:'#a16a2a', leg:'#8b5e34', seat:'#d1d5db', back:'#9ca3af', cb:'#6b7280'},
+  ocean: {d1:'#b3e5fc', d2:'#4fc3f7', db:'#0288d1', leg:'#01579b', seat:'#b2f5ea', back:'#80deea', cb:'#0ea5e9'},
+  modern: {d1:'#e5e7eb', d2:'#cbd5e1', db:'#475569', leg:'#334155', seat:'#e2e8f0', back:'#cbd5e1', cb:'#334155'}
+};
+
+function applyColorTheme(id){
+  const t = THEMES[id] || THEMES.classic;
+  stage.style.setProperty('--desk-grad-1',t.d1);
+  stage.style.setProperty('--desk-grad-2',t.d2);
+  stage.style.setProperty('--desk-border',t.db);
+  stage.style.setProperty('--leg',t.leg);
+  stage.style.setProperty('--chair-seat',t.seat);
+  stage.style.setProperty('--chair-back',t.back);
+  stage.style.setProperty('--chair-border',t.cb);
+}
+
+function applyChairShape(shape){
+  switch(shape){
+    case 'rounded':
+      stage.style.setProperty('--back-w','72px');
+      stage.style.setProperty('--back-h','34px');
+      stage.style.setProperty('--back-r','18px');
+      stage.style.setProperty('--seat-w','76px');
+      stage.style.setProperty('--seat-h','22px');
+      stage.style.setProperty('--seat-r','9999px');
+      stage.style.setProperty('--seat-mt','-4px');
+      break;
+    case 'stool':
+      stage.classList.add('no-back','extra-post');
+      stage.style.setProperty('--seat-w','42px');
+      stage.style.setProperty('--seat-h','42px');
+      break;
+    default: // classic
+      stage.style.removeProperty('--seat-w');
+      stage.classList.remove('no-back','extra-post');
+  }
+}
+
+// apply immediately
+applyColorTheme(localStorage.getItem(COLOR_KEY) || 'classic');
+applyChairShape(localStorage.getItem(SHAPE_KEY) || 'classic');
+
       stage.style.setProperty('--desk-grad-1', t.d1);
       stage.style.setProperty('--desk-grad-2', t.d2);
       stage.style.setProperty('--desk-border', t.db);
