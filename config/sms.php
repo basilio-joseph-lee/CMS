@@ -2,7 +2,7 @@
 // config/sms.php — Mocean helper (works for PH numbers)
 // Prefer environment variables on your host; fall back to literals.
 
-$MOCEAN_TOKEN  = getenv('MOCEAN_TOKEN')  ?: 'apit-a31jaJaUCd9wE7lfnuzzjjPT3QU5FjED-avNb5';
+$MOCEAN_TOKEN  = getenv('MOCEAN_TOKEN')  ?: 'apit-jv8BxWvCh8fTEsSi0iwZdlS6IUByRUP0-eLrBy';
 $MOCEAN_SENDER = getenv('MOCEAN_SENDER') ?: 'MySchoolness'; // or numeric long number (recommended in PH)
 
 /**
