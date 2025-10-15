@@ -84,13 +84,25 @@ const LOGIN_URL  = ORIGIN + APP_BASE + '/config/login_by_student.php';
 const SELECT_URL = ORIGIN + APP_BASE + '/user/teacher/select_subject.php';
 
 const MODELS_URL_PRIMARY = '../models';
-const DISTANCE_THRESHOLD = 0.6;
+const DISTANCE_THRESHOLD = 0.6;  // used by faceapi.FaceMatcher (lower = stricter)
 const PING_MS = 900;
 const DET_PROFILES = [
   { inputSize: 512, scoreThreshold: 0.30 },
   { inputSize: 416, scoreThreshold: 0.30 },
   { inputSize: 320, scoreThreshold: 0.25 },
 ];
+
+/* ====== IMPORTANT: single place to change acceptance threshold ======
+   SIMILARITY_THRESHOLD_PCT controls the minimum *confidence percent*
+   required to accept a match.
+
+   - 80 = very strict (accept only when (1 - distance) >= 0.80)
+   - 60 = moderate
+   - 50 = permissive (not recommended in noisy environments)
+
+   To change the behavior, edit SIMILARITY_THRESHOLD_PCT below.
+===================================================================== */
+const SIMILARITY_THRESHOLD_PCT = 60;
 
 let stream, matcher = null, roster = [], indexByLabel = new Map();
 let scanTimer = null, ready = false;
@@ -227,6 +239,13 @@ async function buildMatcher(){
 }
 
 
+/* ------------ Scan / match loop --------------- */
+/* Behavior:
+   - If face not detected: show scanning message
+   - If face detected but matcher returns 'unknown' OR computed confidence pct < SIMILARITY_THRESHOLD_PCT:
+       => treat as Unknown (do not attempt login)
+   - If match satisfied: attempt login and redirect.
+*/
 async function scanLoop(){
   if (!ready || !matcher) return;
 
@@ -239,35 +258,43 @@ async function scanLoop(){
   if (!det){ setStatus('🔍 Scanning for a face…'); drawBox(null,''); return; }
 
   const best = matcher.findBestMatch(det.descriptor);
-  if (best && best.label !== 'unknown'){
-    const meta = indexByLabel.get(best.label) || { name: 'Student', id: best.label };
-    const confPct = Math.max(0, Math.min(99, Math.round((1 - best.distance) * 100)));
-    drawBox(det, `${meta.name} ${confPct}%`);
-    setStatus(`✅ Recognized: ${meta.name} (${confPct}%) — logging in…`);
-    clearInterval(scanTimer);
 
-    try{
-      const body = new URLSearchParams({ student_id: String(meta.id) });
-      const res  = await fetch(LOGIN_URL, {
-        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
-      }).then(r=>r.json());
+  // compute confidence percent from distance (same formula you used before)
+  const confPct = (typeof best.distance === 'number') ? Math.max(0, Math.min(99, Math.round((1 - best.distance) * 100))) : 0;
 
-      if (res && res.success){
-        // Use an ABSOLUTE URL so the browser never treats "user" as a hostname.
-        window.location.replace(SELECT_URL);
-      } else {
-        setStatus('⚠️ Login failed on server. Retrying…');
-        scanTimer = setInterval(scanLoop, PING_MS);
-      }
-    } catch(e) {
-      console.error(e);
-      setStatus('❌ Network/login error.');
+  // If the face-api returns label 'unknown' or confidence is below threshold — treat as unknown
+  if (!best || best.label === 'unknown' || confPct < SIMILARITY_THRESHOLD_PCT) {
+    drawBox(det, 'Unknown');
+    setStatus(`❌ Face not recognized (${confPct}%).`);
+    return; // keep scanning as normal (scanTimer interval continues)
+  }
+
+  // At this point we have a positive match AND it meets the SIMILARITY threshold
+  const meta = indexByLabel.get(best.label) || { name: 'Student', id: best.label };
+  drawBox(det, `${meta.name} ${confPct}%`);
+  setStatus(`✅ Recognized: ${meta.name} (${confPct}%) — logging in…`);
+  clearInterval(scanTimer);
+
+  try{
+    const body = new URLSearchParams({ student_id: String(meta.id) });
+    const res  = await fetch(LOGIN_URL, {
+      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
+    }).then(r=>r.json());
+
+    if (res && res.success){
+      // Use an ABSOLUTE URL so the browser never treats "user" as a hostname.
+      window.location.replace(SELECT_URL);
+    } else {
+      setStatus('⚠️ Login failed on server. Retrying…');
       scanTimer = setInterval(scanLoop, PING_MS);
     }
-  } else {
-    drawBox(det, 'Unknown'); setStatus('❌ Face not recognized.');
+  } catch(e) {
+    console.error(e);
+    setStatus('❌ Network/login error.');
+    scanTimer = setInterval(scanLoop, PING_MS);
   }
 }
+/* ---------------------------------------------- */
 
 async function init(){
   try{
