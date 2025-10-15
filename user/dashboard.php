@@ -16,6 +16,37 @@ $school_year_id = (int)($_SESSION['school_year_id'] ?? 0);
 $subject_name   = $_SESSION['subject_name'] ?? 'Subject';
 $class_name     = $_SESSION['class_name'] ?? 'Section';
 $year_label     = $_SESSION['year_label'] ?? 'SY';
+
+// ---- NEW: include DB and fetch announcements ----
+include '../config/db.php'; // expects $conn (mysqli) from your config file
+
+$announcements = [];
+if (isset($conn) && $conn instanceof mysqli) {
+    // We'll fetch announcements that match either the student's class (advisory)
+    // and/or subject, or announcements with NULL (global) scope.
+    $sql = "
+      SELECT id, title, message, date_posted, visible_until
+      FROM announcements
+      WHERE (class_id = ? OR class_id IS NULL)
+        AND (subject_id = ? OR subject_id IS NULL)
+        AND (visible_until IS NULL OR visible_until >= CURDATE())
+      ORDER BY date_posted DESC
+      LIMIT 5
+    ";
+    $stmt = $conn->prepare($sql);
+    if ($stmt) {
+        $stmt->bind_param('ii', $advisory_id, $subject_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $announcements[] = $row;
+        }
+        $stmt->close();
+    } else {
+        // optional: debug in dev; avoid showing in production
+        // error_log('Announcements prepare failed: '.$conn->error);
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -124,7 +155,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
 </div>
       </div>
       <div class="card px-4 py-3">
-        <div class="text-xs text-gray-500 font-bold uppercase">Current status</div>
+        <div class="text-xs text-gray-500 font-bold Uppercase">Current status</div>
         <div class="mt-1">
           <span id="statusChip" class="chip" aria-live="polite">Loading…</span>
         </div>
@@ -168,6 +199,31 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   <div class="wrap grid md:grid-cols-2 gap-4">
     <div class="card p-5">
       <div class="text-xl font-black mb-2">🧾 Details</div>
+
+      <!-- --- NEW: Announcements (if any) --- -->
+      <?php if (!empty($announcements)): ?>
+        <div class="mb-4">
+          <div class="text-sm font-bold text-gray-700 mb-2">📢 Announcements</div>
+          <ul class="space-y-3">
+            <?php foreach ($announcements as $a): ?>
+              <li class="p-3 border rounded-lg">
+                <div class="flex items-baseline justify-between gap-3">
+                  <div class="font-bold text-gray-800"><?= htmlspecialchars($a['title']) ?></div>
+                  <div class="text-xs text-gray-500"><?= date('M j, Y H:i', strtotime($a['date_posted'])) ?></div>
+                </div>
+                <div class="mt-2 text-sm text-gray-700"><?= nl2br(htmlspecialchars($a['message'])) ?></div>
+                <?php if (!empty($a['visible_until'])): ?>
+                  <div class="mt-2 text-xs text-gray-500">Visible until: <?= htmlspecialchars($a['visible_until']) ?></div>
+                <?php endif; ?>
+              </li>
+            <?php endforeach; ?>
+          </ul>
+        </div>
+      <?php else: ?>
+        <div class="mb-4 text-sm text-gray-600">No announcements right now.</div>
+      <?php endif; ?>
+      <!-- --- End Announcements --- -->
+
       <div id="statusText" class="text-gray-700">Loading…</div>
     </div>
 
