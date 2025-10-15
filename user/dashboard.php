@@ -346,7 +346,8 @@ async function loadStatus(){
   }catch(e){
     statusChip.classList.add('bad');
     statusChip.textContent = 'Active';
-    statusText.textContent = '⚠️ Cannot reach server. Your actions will try again.';
+    statusText.textContent = '';
+        // statusText.textContent = '⚠️ Cannot reach server. Your actions will try again.';
   }
 }
 
