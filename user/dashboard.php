@@ -109,10 +109,10 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
   >
     🚪 Logout
   </a>
-  <button id="btnRelog"
+  <!-- <button id="btnRelog"
     class="inline-flex items-center justify-center rounded-xl bg-green-600 px-4 py-2 text-sm sm:text-base font-semibold shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-300 transition">
     👤 Re-log (Face)
-  </button>
+  </button> -->
   <!-- NEW: read-only viewer -->
   <a
     href="classroom_viewer.php"
