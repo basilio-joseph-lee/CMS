@@ -289,7 +289,7 @@ async function loadStatus(){
     paintStatus(my?.action || '', my?.timestamp || '');
   }catch(e){
     statusChip.classList.add('bad');
-    statusChip.textContent = 'Offline';
+    statusChip.textContent = '';
     statusText.textContent = '⚠️ Cannot reach server. Your actions will try again.';
   }
 }
