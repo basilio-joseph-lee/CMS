@@ -15,7 +15,7 @@ $yearLabel   = htmlspecialchars($_SESSION['year_label'] ?? '');
   <title>Quiz Setup</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="min-h-screen bg-[#fff7e6] flex items-center justify-center p-6">
+<body class="min-h-screen bg-white flex items-center justify-center p-6">
   <div class="bg-white shadow-lg rounded-2xl p-8 w-full max-w-md">
     <h1 class="text-2xl font-bold mb-4">🎮 New Quiz Game</h1>
     <p class="text-sm text-gray-600 mb-6">
