@@ -153,9 +153,9 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
     <button class="tile t-cyan"   data-action="water_break" aria-label="Water Break">
       <span class="emoji">💧</span><div class="label">Water</div>
     </button>
-    <button class="tile t-rose"   data-action="not_well"  aria-label="Not Feeling Well">
+    <!-- <button class="tile t-rose"   data-action="not_well"  aria-label="Not Feeling Well">
       <span class="emoji">🤒</span><div class="label">Not Well</div>
-    </button>
+    </button> -->
     <button class="tile t-green"  data-action="lunch_break" aria-label="Lunch Break">
       <span class="emoji">🍱</span><div class="label">Lunch</div>
     </button>
@@ -356,3 +356,4 @@ window.addEventListener('DOMContentLoaded', markAttendanceOnLoad);
 </script>
 </body>
 </html>
+y
