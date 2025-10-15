@@ -356,4 +356,3 @@ window.addEventListener('DOMContentLoaded', markAttendanceOnLoad);
 </script>
 </body>
 </html>
-y
