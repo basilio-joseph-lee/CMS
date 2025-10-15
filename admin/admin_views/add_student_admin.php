@@ -1,5 +1,5 @@
 <?php
-session_start();
+
 
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 require_once __DIR__ . '/../../config/db.php';
