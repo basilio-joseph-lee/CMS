@@ -12,7 +12,7 @@ function json_fail($msg, $code = 400){
 }
 
 /* === INSERT YOUR MOCEAN TOKEN HERE === */
-$MOCEAN_TOKEN  = 'apit-a31jaJaUCd9wE7lfnuzzjjPT3QU5FjED-avNb5'; // <-- replace with your actual token (full string)
+$MOCEAN_TOKEN  = 'apit-jv8BxWvCh8fTEsSi0iwZdlS6IUByRUP0-eLrBy'; // <-- replace with your actual token (full string)
 $MOCEAN_SENDER = 'MySchoolness';
  // numeric sender (sa PH, mas sure pumasok kaysa alphanumeric)
 
