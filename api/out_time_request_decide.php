@@ -17,7 +17,7 @@ function fail($msg, $code=400, $debug=null){
 }
 
 // ====== TEMP (you can move to config/env later) ======
-$MOCEAN_TOKEN  = $MOCEAN_TOKEN  ?? 'apit-a31jaJaUCd9wE7lfnuzzjjPT3QU5FjED-avNb5';
+$MOCEAN_TOKEN  = $MOCEAN_TOKEN  ?? 'apit-jv8BxWvCh8fTEsSi0iwZdlS6IUByRUP0-eLrBy';
 $MOCEAN_SENDER = $MOCEAN_SENDER ?? 'MySchoolness';
 
 // ---------------- Helpers ----------------
