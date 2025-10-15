@@ -27,8 +27,8 @@ $yearLabel   = htmlspecialchars($_SESSION['year_label'] ?? '');
         <label class="block font-semibold mb-1">Select Game Type</label>
         <select name="game_type" class="w-full border rounded-lg px-3 py-2" required>
           <option value="multiple_choice">Multiple Choice</option>
-          <option value="true_false">True / False</option>
-          <option value="identification">Identification</option>
+          <!-- <option value="true_false">True / False</option>
+          <option value="identification">Identification</option> -->
           <!-- add more later -->
         </select>
       </div>
