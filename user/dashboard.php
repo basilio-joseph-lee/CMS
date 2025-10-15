@@ -179,7 +179,7 @@ $year_label     = $_SESSION['year_label'] ?? 'SY';
         <li>Your teacher sees your status instantly.</li>
       </ul>
       <div class="mt-4">
-        <button onclick="location.href='select_subject.php'" class="underline text-gray-600 text-sm">← Back to Subjects</button>
+        <!-- <button onclick="location.href='select_subject.php'" class="underline text-gray-600 text-sm">← Back to Subjects</button> -->
       </div>
     </div>
   </div>
