@@ -112,8 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     $fetchSrc = $checkEnroll = $insertEnroll = null;
     try {
         // Fetch students in source subject using bind_result (avoid get_result)
-        $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id) VALUES (?, ?, ?, ?)");
-
+        $fetchSrc = $conn->prepare("SELECT s.student_id FROM students s JOIN student_enrollments e ON s.student_id = e.student_id WHERE e.subject_id = ? AND e.advisory_id = ? AND e.school_year_id = ?");
         if (!$fetchSrc) {
             throw new Exception("prepare(fetchSrc) failed: " . $conn->error);
         }
