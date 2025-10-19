@@ -128,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         $checkEnroll = $conn->prepare("SELECT 1 FROM student_enrollments WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ? LIMIT 1");
         if (!$checkEnroll) throw new Exception("prepare(checkEnroll) failed: " . $conn->error);
 
-        $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id, created_at) VALUES (?, ?, ?, ?, NOW())");
+        $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id) VALUES (?, ?, ?, ?)");
         if (!$insertEnroll) throw new Exception("prepare(insertEnroll) failed: " . $conn->error);
 
         $imported = 0; $skipped = 0;
