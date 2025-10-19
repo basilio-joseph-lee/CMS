@@ -145,10 +145,15 @@ if ($row = $portal_res->fetch_assoc()) {
             </div>
           <?php endforeach; ?>
         </div>
-        <div class="flex justify-end mt-6">
-          <button type="button" onclick="document.getElementById('weightModal').classList.add('hidden')" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold px-4 py-2 rounded mr-2">Cancel</button>
-          <button type="button" onclick="validateWeights()" class="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2 rounded shadow">✅ Save</button>
-        </div>
+<div class="mt-4 text-right text-sm font-semibold">
+  <span id="weightTotal" class="text-gray-700">Total: 100%</span>
+</div>
+
+<div class="flex justify-end mt-4">
+  <button type="button" onclick="document.getElementById('weightModal').classList.add('hidden')" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold px-4 py-2 rounded mr-2">Cancel</button>
+  <button type="submit" id="saveWeightBtn" class="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2 rounded shadow">✅ Save</button>
+</div>
+
       </div>
     </div>
 
@@ -253,23 +258,36 @@ if ($row = $portal_res->fetch_assoc()) {
 </div>
 
 <script>
-function validateWeights() {
+document.querySelectorAll('input[name^="weights["]').forEach(input => {
+  input.addEventListener('input', updateWeightTotal);
+});
+
+function updateWeightTotal() {
   let total = 0;
-  const inputs = document.querySelectorAll('input[name^="weights["]');
-  inputs.forEach(input => {
-    const val = parseFloat(input.value) || 0;
-    total += val;
+  document.querySelectorAll('input[name^="weights["]').forEach(input => {
+    total += parseFloat(input.value) || 0;
   });
 
-  if (total !== 100) {
-    alert("⚠️ The total of all weights must be exactly 100%. Currently: " + total + "%");
-    return false;
-  }
+  const totalDisplay = document.getElementById('weightTotal');
+  const saveBtn = document.getElementById('saveWeightBtn');
 
-  // if valid, submit the form
-  document.querySelector('form').submit();
+  totalDisplay.textContent = `Total: ${total}%`;
+
+  if (total === 100) {
+    totalDisplay.classList.remove('text-red-600');
+    totalDisplay.classList.add('text-green-600');
+    saveBtn.disabled = false;
+    saveBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+  } else {
+    totalDisplay.classList.remove('text-green-600');
+    totalDisplay.classList.add('text-red-600');
+    saveBtn.disabled = true;
+    saveBtn.classList.add('opacity-50', 'cursor-not-allowed');
+  }
 }
+updateWeightTotal(); // run once when modal opens
 </script>
+
 
 </body>
 </html>
