@@ -147,7 +147,7 @@ if ($row = $portal_res->fetch_assoc()) {
         </div>
         <div class="flex justify-end mt-6">
           <button type="button" onclick="document.getElementById('weightModal').classList.add('hidden')" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold px-4 py-2 rounded mr-2">Cancel</button>
-          <button type="submit" class="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2 rounded shadow">✅ Save</button>
+          <button type="button" onclick="validateWeights()" class="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2 rounded shadow">✅ Save</button>
         </div>
       </div>
     </div>
@@ -251,6 +251,26 @@ if ($row = $portal_res->fetch_assoc()) {
 
   </form>
 </div>
+
+<script>
+function validateWeights() {
+  let total = 0;
+  const inputs = document.querySelectorAll('input[name^="weights["]');
+  inputs.forEach(input => {
+    const val = parseFloat(input.value) || 0;
+    total += val;
+  });
+
+  if (total !== 100) {
+    alert("⚠️ The total of all weights must be exactly 100%. Currently: " + total + "%");
+    return false;
+  }
+
+  // if valid, submit the form
+  document.querySelector('form').submit();
+}
+</script>
+
 </body>
 </html>
 <?php endif; ?>
