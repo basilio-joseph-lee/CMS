@@ -83,18 +83,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         header("Location: view_students.php");
         exit;
     }
+    // buffer permission check result
     $checkStmt->store_result();
     if ($checkStmt->num_rows === 0) {
+        $checkStmt->free_result();
+        $checkStmt->close();
         $_SESSION['toast'] = "Import failed: you do not have permission to import from that subject.";
         $_SESSION['toast_type'] = "error";
         header("Location: view_students.php");
         exit;
     }
+    $checkStmt->free_result();
+    $checkStmt->close();
 
     // Begin transaction
     $conn->begin_transaction();
+    // initialize statement vars for cleanup in catch
+    $fetchSrc = $checkEnroll = $insertEnroll = null;
     try {
-        // Fetch students in source subject using bind_result (avoids get_result dependency)
+        // Fetch students in source subject using bind_result (avoid get_result)
         $fetchSrc = $conn->prepare("SELECT s.student_id FROM students s JOIN student_enrollments e ON s.student_id = e.student_id WHERE e.subject_id = ? AND e.advisory_id = ? AND e.school_year_id = ?");
         if (!$fetchSrc) {
             throw new Exception("prepare(fetchSrc) failed: " . $conn->error);
@@ -103,6 +110,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         if (!$fetchSrc->execute()) {
             throw new Exception("execute(fetchSrc) failed: " . $fetchSrc->error);
         }
+
+        // IMPORTANT: buffer the resultset so we can run other queries safely
+        $fetchSrc->store_result();
         $fetchSrc->bind_result($f_student_id);
 
         $checkEnroll = $conn->prepare("SELECT 1 FROM student_enrollments WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ? LIMIT 1");
@@ -124,8 +134,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
             $checkEnroll->store_result();
             if ($checkEnroll->num_rows > 0) {
                 $skipped++;
+                $checkEnroll->free_result();
                 continue;
             }
+            $checkEnroll->free_result();
 
             // insert enrollment
             $insertEnroll->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id);
@@ -135,12 +147,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
             $imported++;
         }
 
+        // free fetch results and close statements before commit
+        $fetchSrc->free_result();
+        $fetchSrc->close();
+        $checkEnroll->close();
+        $insertEnroll->close();
+
         $conn->commit();
         $_SESSION['toast'] = "Imported {$imported} students. Skipped {$skipped}.";
         $_SESSION['toast_type'] = "success";
         header("Location: view_students.php");
         exit;
     } catch (Exception $e) {
+        // free/close any open statements before rollback to avoid "commands out of sync"
+        if ($fetchSrc !== null) {
+            // these calls may throw if statement already closed — suppress warnings
+            @ $fetchSrc->free_result();
+            @ $fetchSrc->close();
+        }
+        if ($checkEnroll !== null) {
+            @ $checkEnroll->free_result();
+            @ $checkEnroll->close();
+        }
+        if ($insertEnroll !== null) {
+            @ $insertEnroll->close();
+        }
+
+        // rollback
         $conn->rollback();
         // write actual DB/exception details to log (safe: not shown to user)
         file_put_contents($logFile, date('c') . " - Import exception: " . $e->getMessage() . PHP_EOL, FILE_APPEND);
