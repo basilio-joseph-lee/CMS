@@ -1,5 +1,15 @@
 <?php
 session_start();
+
+// DEBUG: show last lines of import log (temporary — remove when done)
+$logFile = __DIR__ . '/logs/import_errors.log';
+if (file_exists($logFile) && is_readable($logFile)) {
+    $lines = array_slice(file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES), -40);
+    if (!empty($lines)) {
+        echo '<div style="max-width:1000px;margin:10px auto;padding:10px;background:#111;color:#fff;border-radius:6px;font-family:monospace;"><strong>DEBUG: import_errors.log (last lines)</strong><pre style="white-space:pre-wrap;">' . htmlspecialchars(implode("\n", $lines)) . '</pre></div>';
+    }
+}
+
 include '../../config/teacher_guard.php';
 include "../../config/db.php";
 
