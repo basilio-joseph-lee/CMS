@@ -61,12 +61,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     $school_year_id = intval($_SESSION['school_year_id']);
     $teacher_id = intval($_SESSION['teacher_id']);
 
+    // prepare a small logger
+    $logDir = __DIR__ . '/logs';
+    if (!is_dir($logDir)) @mkdir($logDir, 0755, true);
+    $logFile = $logDir . '/import_errors.log';
+
     // Basic permissions check: ensure teacher owns source subject (adjust query to your schema if needed)
     $checkStmt = $conn->prepare("SELECT 1 FROM subjects WHERE subject_id = ? AND teacher_id = ? LIMIT 1"); // ADJUST IF NEEDED
+    if (!$checkStmt) {
+        file_put_contents($logFile, date('c') . " - prepare(checkStmt) failed: " . $conn->error . PHP_EOL, FILE_APPEND);
+        $_SESSION['toast'] = "Import failed: internal error (see logs).";
+        $_SESSION['toast_type'] = "error";
+        header("Location: view_students.php");
+        exit;
+    }
     $checkStmt->bind_param("ii", $source_subject_id, $teacher_id);
-    $checkStmt->execute();
-    $checkRes = $checkStmt->get_result();
-    if ($checkRes->num_rows === 0) {
+    if (!$checkStmt->execute()) {
+        file_put_contents($logFile, date('c') . " - execute(checkStmt) failed: " . $checkStmt->error . PHP_EOL, FILE_APPEND);
+        $_SESSION['toast'] = "Import failed: internal error (see logs).";
+        $_SESSION['toast_type'] = "error";
+        header("Location: view_students.php");
+        exit;
+    }
+    $checkStmt->store_result();
+    if ($checkStmt->num_rows === 0) {
         $_SESSION['toast'] = "Import failed: you do not have permission to import from that subject.";
         $_SESSION['toast_type'] = "error";
         header("Location: view_students.php");
@@ -76,29 +94,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     // Begin transaction
     $conn->begin_transaction();
     try {
-        // Fetch students in source subject
+        // Fetch students in source subject using bind_result (avoids get_result dependency)
         $fetchSrc = $conn->prepare("SELECT s.student_id FROM students s JOIN student_enrollments e ON s.student_id = e.student_id WHERE e.subject_id = ? AND e.advisory_id = ? AND e.school_year_id = ?");
+        if (!$fetchSrc) {
+            throw new Exception("prepare(fetchSrc) failed: " . $conn->error);
+        }
         $fetchSrc->bind_param("iii", $source_subject_id, $advisory_id, $school_year_id);
-        $fetchSrc->execute();
-        $res = $fetchSrc->get_result();
-        $imported = 0; $skipped = 0;
+        if (!$fetchSrc->execute()) {
+            throw new Exception("execute(fetchSrc) failed: " . $fetchSrc->error);
+        }
+        $fetchSrc->bind_result($f_student_id);
 
         $checkEnroll = $conn->prepare("SELECT 1 FROM student_enrollments WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ? LIMIT 1");
-        $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id, created_at) VALUES (?, ?, ?, ?, NOW())");
+        if (!$checkEnroll) throw new Exception("prepare(checkEnroll) failed: " . $conn->error);
 
-        while ($row = $res->fetch_assoc()) {
-            $student_id = intval($row['student_id']);
-            // check existing
+        $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id, created_at) VALUES (?, ?, ?, ?, NOW())");
+        if (!$insertEnroll) throw new Exception("prepare(insertEnroll) failed: " . $conn->error);
+
+        $imported = 0; $skipped = 0;
+
+        while ($fetchSrc->fetch()) {
+            $student_id = intval($f_student_id);
+
+            // check existing using store_result() to get num_rows
             $checkEnroll->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id);
-            $checkEnroll->execute();
-            $checkRes = $checkEnroll->get_result();
-            if ($checkRes->num_rows > 0) {
+            if (!$checkEnroll->execute()) {
+                throw new Exception("execute(checkEnroll) failed for student {$student_id}: " . $checkEnroll->error);
+            }
+            $checkEnroll->store_result();
+            if ($checkEnroll->num_rows > 0) {
                 $skipped++;
                 continue;
             }
+
             // insert enrollment
             $insertEnroll->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id);
-            $insertEnroll->execute();
+            if (!$insertEnroll->execute()) {
+                throw new Exception("execute(insertEnroll) failed for student {$student_id}: " . $insertEnroll->error);
+            }
             $imported++;
         }
 
@@ -109,7 +142,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         exit;
     } catch (Exception $e) {
         $conn->rollback();
-        $_SESSION['toast'] = "Import failed: DB error.";
+        // write actual DB/exception details to log (safe: not shown to user)
+        file_put_contents($logFile, date('c') . " - Import exception: " . $e->getMessage() . PHP_EOL, FILE_APPEND);
+        $_SESSION['toast'] = "Import failed: DB error (see server logs).";
         $_SESSION['toast_type'] = "error";
         header("Location: view_students.php");
         exit;
