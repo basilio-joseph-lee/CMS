@@ -383,33 +383,33 @@ document.getElementById('quickBack').addEventListener('click', ()=> logAction('i
 loadStatus();
 setInterval(loadStatus, 4000);
 
-// --- Auto mark attendance on dashboard load ---
-async function markAttendanceOnLoad(){
-  try {
-    // 1️⃣ Log behavior
-    await fetch('../api/log_behavior.php', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      credentials: 'include',
-      body: JSON.stringify({ student_id, action_type:'attendance' })
-    });
+// // --- Auto mark attendance on dashboard load ---
+// async function markAttendanceOnLoad(){
+//   try {
+//     // 1️⃣ Log behavior
+//     await fetch('../api/log_behavior.php', {
+//       method: 'POST',
+//       headers: {'Content-Type':'application/json'},
+//       credentials: 'include',
+//       body: JSON.stringify({ student_id, action_type:'attendance' })
+//     });
 
-    // 2️⃣ Mark official attendance record
-    await fetch('../api/mark_attendance.php', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      credentials: 'include',
-      body: JSON.stringify({
-        student_id: student_id,
-        status: 'Present'
-      })
-    });
-  } catch(e){
-    console.warn('Could not mark attendance:', e);
-  }
-}
+//     // 2️⃣ Mark official attendance record
+//     await fetch('../api/mark_attendance.php', {
+//       method: 'POST',
+//       headers: {'Content-Type':'application/json'},
+//       credentials: 'include',
+//       body: JSON.stringify({
+//         student_id: student_id,
+//         status: 'Present'
+//       })
+//     });
+//   } catch(e){
+//     console.warn('Could not mark attendance:', e);
+//   }
+// }
 
-window.addEventListener('DOMContentLoaded', markAttendanceOnLoad);
+// window.addEventListener('DOMContentLoaded', markAttendanceOnLoad);
 </script>
 </body>
 </html>
