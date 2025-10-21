@@ -352,6 +352,21 @@ async function loadStatus(){
 }
 
 async function logAction(action_type){
+  // Prevent multiple 'attendance' logs
+  if(action_type==='attendance'){
+    try {
+      const check = await fetch(`../api/check_attendance.php?student_id=${student_id}&subject_id=${<?= $subject_id ?>}&advisory_id=${<?= $advisory_id ?>}&school_year_id=${<?= $school_year_id ?>}`);
+      const resCheck = await check.json();
+      if(resCheck.exists){
+        toast('✅ Attendance already marked for today','ok');
+        return; // skip sending log again
+      }
+    } catch(e){
+      console.warn('Could not check attendance', e);
+      // fallback: continue anyway
+    }
+  }
+
   setBusy(true);
   paintStatus(action_type, new Date().toISOString());
   try{
@@ -374,6 +389,7 @@ async function logAction(action_type){
     setBusy(false);
   }
 }
+
 
 document.querySelectorAll('[data-action]').forEach(btn=>{
   btn.addEventListener('click', ()=> logAction(btn.dataset.action));
