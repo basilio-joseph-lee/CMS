@@ -177,6 +177,7 @@ try {
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )");
 
+            // ✅ Only send SMS for attendance
             if ($to_e164 && function_exists('send_sms')) {
                 $smsRes = send_sms($parent_mobile_raw, $msg);
                 $ok = $smsRes['ok'] ?? false;
@@ -218,6 +219,8 @@ try {
             $insertId = $stmt->insert_id;
             $stmt->close();
         }
+        // 🚫 ensure no SMS attempt for non-attendance
+        $response['sms'] = ['sent'=>false,'reason'=>'non_attendance_action'];
     }
 
     $friendly = [
