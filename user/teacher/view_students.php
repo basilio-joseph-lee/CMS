@@ -30,6 +30,26 @@ function build_student_upload_path($student_id, $prefix = 'face', $ext = 'jpg') 
 }
 
 /**
+ * Helper: robust file exists that tolerates leading slashes in DB values
+ */
+function resolve_relative_to_project($relPath) {
+    if (!$relPath) return false;
+    // normalize
+    $rel = ltrim($relPath, '/');
+    $absCandidate = __DIR__ . '/../' . $rel;
+    if (file_exists($absCandidate)) return $absCandidate;
+    // also check document root absolute path variant
+    if (isset($_SERVER['DOCUMENT_ROOT'])) {
+        $abs2 = rtrim($_SERVER['DOCUMENT_ROOT'], '/') . '/' . $rel;
+        if (file_exists($abs2)) return $abs2;
+    }
+    // finally check as given (maybe already relative to current dir)
+    $abs3 = __DIR__ . '/' . $relPath;
+    if (file_exists($abs3)) return $abs3;
+    return false;
+}
+
+/**
  * AJAX endpoint: fetch advisories for a given subject (same school year)
  */
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'fetch_advisories') {
@@ -72,9 +92,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
  * Handle basic edit
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
-  $id = $_POST['student_id'];
-  $name = $_POST['fullname'];
-  $gender = $_POST['gender'];
+  $id = intval($_POST['student_id']);
+  $name = $_POST['fullname'] ?? '';
+  $gender = $_POST['gender'] ?? '';
   $stmt = $conn->prepare("UPDATE students SET fullname = ?, gender = ? WHERE student_id = ?");
   $stmt->bind_param("ssi", $name, $gender, $id);
   $stmt->execute();
@@ -88,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
  * Handle delete
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
-  $id = $_POST['student_id'];
+  $id = intval($_POST['student_id']);
   $stmt = $conn->prepare("DELETE FROM students WHERE student_id = ?");
   $stmt->bind_param("i", $id);
   $stmt->execute();
@@ -100,7 +120,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
 
 /**
  * Import handling (kept same as previous, requiring source_subject_id + source_advisory_id)
- * NOTE: created_at removed — use only the 4-column INSERT to match your production schema.
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     $source_subject_id = intval($_POST['source_subject_id'] ?? 0);
@@ -175,7 +194,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         $checkEnroll = $conn->prepare("SELECT 1 FROM student_enrollments WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ? LIMIT 1");
         if (!$checkEnroll) throw new Exception("prepare(checkEnroll) failed: " . $conn->error);
 
-        // Prepare insert for student_enrollments (4 columns only)
         $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id) VALUES (?, ?, ?, ?)");
         if (!$insertEnroll) throw new Exception("prepare(insertEnroll) failed: " . $conn->error);
 
@@ -285,7 +303,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // make upload dirs
-        $destRel = build_student_upload_path($student_id, 'face', $imgType);
+        $destRel = build_student_upload_path($student_id, 'face', $imgType); // e.g. uploads/students/face_123_....jpg
         $destAbs = __DIR__ . '/' . $destRel;
         if (!is_dir(dirname($destAbs))) @mkdir(dirname($destAbs), 0755, true);
 
@@ -297,11 +315,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $prevR = $stmtPrev->get_result();
             if ($rowPrev = $prevR->fetch_assoc()) {
                 $prevPath = $rowPrev['face_image_path'];
-                if (!empty($prevPath) && file_exists(__DIR__ . '/' . $prevPath)) {
-                    $backupDir = 'uploads/students/backup';
-                    if (!is_dir($backupDir)) @mkdir($backupDir, 0755, true);
-                    $backupName = $backupDir . '/face_' . $student_id . '_' . time() . '.' . pathinfo($prevPath, PATHINFO_EXTENSION);
-                    @copy(__DIR__ . '/' . $prevPath, __DIR__ . '/' . $backupName);
+                if (!empty($prevPath)) {
+                    $prevAbs = resolve_relative_to_project($prevPath);
+                    if ($prevAbs) {
+                        $backupDir = __DIR__ . '/uploads/students/backup';
+                        if (!is_dir($backupDir)) @mkdir($backupDir, 0755, true);
+                        $backupName = $backupDir . '/face_' . $student_id . '_' . time() . '.' . pathinfo($prevAbs, PATHINFO_EXTENSION);
+                        @copy($prevAbs, $backupName);
+                    }
                 }
             }
             $stmtPrev->close();
@@ -314,36 +335,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        // Save descriptor: prefer DB column `descriptor_json` if exists; otherwise write to file
+        // Attempt to save descriptor into student_face_descriptors table if present.
         $descriptorSavedToDB = false;
         $descriptor_json_string = '';
         if (is_array($descriptor) || is_string($descriptor)) {
-            // normalize to JSON string
             $descriptor_json_string = is_string($descriptor) ? $descriptor : json_encode($descriptor);
-            // check if column exists
-            $colRes = $conn->query("SHOW COLUMNS FROM students LIKE 'descriptor_json'");
-            if ($colRes && $colRes->num_rows > 0) {
-                $upd = $conn->prepare("UPDATE students SET face_image_path = ?, descriptor_json = ? WHERE student_id = ?");
-                if ($upd) {
-                    $upd->bind_param("ssi", $destRel, $descriptor_json_string, $student_id);
-                    if (!$upd->execute()) {
-                        // DB write failed, log
-                        file_put_contents($logFile, date('c') . " - descriptor DB write failed: " . $upd->error . PHP_EOL, FILE_APPEND);
+            // check if table student_face_descriptors exists
+            $tblRes = $conn->query("SHOW TABLES LIKE 'student_face_descriptors'");
+            if ($tblRes && $tblRes->num_rows > 0) {
+                // Upsert: INSERT ... ON DUPLICATE KEY UPDATE (table has PRIMARY KEY student_id)
+                // some MySQL versions may not support JSON check constraints; store string as-is
+                $upsert = $conn->prepare("
+                    INSERT INTO student_face_descriptors (student_id, descriptor_json, face_image_path, stale)
+                    VALUES (?, ?, ?, 0)
+                    ON DUPLICATE KEY UPDATE descriptor_json = VALUES(descriptor_json), face_image_path = VALUES(face_image_path), stale = 0, updated_at = CURRENT_TIMESTAMP()
+                ");
+                if ($upsert) {
+                    // store path same as destRel
+                    $upsert->bind_param("iss", $student_id, $descriptor_json_string, $destRel);
+                    if (!$upsert->execute()) {
+                        file_put_contents($logFile, date('c') . " - descriptor upsert failed: " . $upsert->error . PHP_EOL, FILE_APPEND);
                     } else {
                         $descriptorSavedToDB = true;
                     }
-                    $upd->close();
+                    $upsert->close();
+                } else {
+                    file_put_contents($logFile, date('c') . " - prepare(upsert) failed: " . $conn->error . PHP_EOL, FILE_APPEND);
                 }
             }
         }
 
-        // If descriptor not saved to DB, write descriptor json to file for safekeeping
+        // If descriptor wasn't saved to descriptors table, write descriptor json to file for safekeeping
         if (!$descriptorSavedToDB && $descriptor_json_string) {
-            $descDir = 'uploads/students/descriptors';
+            $descDir = __DIR__ . '/uploads/students/descriptors';
             if (!is_dir($descDir)) @mkdir($descDir, 0755, true);
-            $descPathRel = $descDir . '/student_' . $student_id . '_' . time() . '.json';
+            $descPathRel = 'uploads/students/descriptors/student_' . $student_id . '_' . time() . '.json';
             file_put_contents(__DIR__ . '/' . $descPathRel, $descriptor_json_string);
-            // still update face_image_path in DB
+            // still update students.face_image_path
             $upd2 = $conn->prepare("UPDATE students SET face_image_path = ? WHERE student_id = ?");
             if ($upd2) {
                 $upd2->bind_param("si", $destRel, $student_id);
@@ -356,19 +384,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $upd2->close();
             }
         } else {
-            // descriptor was saved to DB already (or there was no descriptor). Ensure face_image_path updated if not already.
-            if (!$descriptorSavedToDB) {
-                $upd3 = $conn->prepare("UPDATE students SET face_image_path = ? WHERE student_id = ?");
-                if ($upd3) {
-                    $upd3->bind_param("si", $destRel, $student_id);
-                    if (!$upd3->execute()) {
-                        file_put_contents($logFile, date('c') . " - face DB update failed: " . $upd3->error . PHP_EOL, FILE_APPEND);
-                        header('Content-Type: application/json; charset=utf-8');
-                        echo json_encode(['status' => 'error', 'message' => 'DB update failed.']);
-                        exit;
-                    }
-                    $upd3->close();
+            // descriptor was saved to DB already (or there was no descriptor). Update students.face_image_path if needed.
+            $upd3 = $conn->prepare("UPDATE students SET face_image_path = ? WHERE student_id = ?");
+            if ($upd3) {
+                $upd3->bind_param("si", $destRel, $student_id);
+                if (!$upd3->execute()) {
+                    file_put_contents($logFile, date('c') . " - face DB update failed: " . $upd3->error . PHP_EOL, FILE_APPEND);
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode(['status' => 'error', 'message' => 'DB update failed.']);
+                    exit;
                 }
+                $upd3->close();
             }
         }
 
@@ -383,12 +409,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 /**
  * Fetch variables (existing)
  */
-$subject_id = $_SESSION['subject_id'];
-$advisory_id = $_SESSION['advisory_id'];
-$school_year_id = $_SESSION['school_year_id'];
-$subject_name = $_SESSION['subject_name'];
-$class_name = $_SESSION['class_name'];
-$year_label = $_SESSION['year_label'];
+$subject_id = intval($_SESSION['subject_id'] ?? 0);
+$advisory_id = intval($_SESSION['advisory_id'] ?? 0);
+$school_year_id = intval($_SESSION['school_year_id'] ?? 0);
+$subject_name = $_SESSION['subject_name'] ?? '';
+$class_name = $_SESSION['class_name'] ?? '';
+$year_label = $_SESSION['year_label'] ?? '';
 $teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
 
 /**
@@ -406,7 +432,7 @@ $students = $result->fetch_all(MYSQLI_ASSOC);
 /**
  * Fetch teacher's other subjects to populate import dropdown (exclude current subject)
  */
-$teacher_id = intval($_SESSION['teacher_id']);
+$teacher_id = intval($_SESSION['teacher_id'] ?? 0);
 $subjects_for_import = [];
 $subStmt = $conn->prepare("SELECT subject_id, subject_name FROM subjects WHERE teacher_id = ? AND subject_id != ?");
 $subStmt->bind_param("ii", $teacher_id, $subject_id);
@@ -417,7 +443,6 @@ while ($r = $sr->fetch_assoc()) {
 }
 
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -430,9 +455,7 @@ while ($r = $sr->fetch_assoc()) {
       background-size: cover;
       background-position: center;
       font-family: 'Comic Sans MS', cursive, sans-serif;
-      
     }
-    
   </style>
 </head>
 <body class="px-6 py-8">
@@ -455,11 +478,11 @@ while ($r = $sr->fetch_assoc()) {
 
 <div class="flex justify-between items-center bg-green-800 text-white px-6 py-4 rounded-xl shadow-lg mb-6">
   <div>
-    <h1 class="text-xl font-bold">👨‍🏫 <?= $teacherName ?></h1>
+    <h1 class="text-xl font-bold">👨‍🏫 <?= htmlspecialchars($teacherName) ?></h1>
     <p class="text-sm">
-      Subject: <?= $subject_name ?> |
-      Section: <?= $class_name ?> |
-      SY: <?= $year_label ?>
+      Subject: <?= htmlspecialchars($subject_name) ?> |
+      Section: <?= htmlspecialchars($class_name) ?> |
+      SY: <?= htmlspecialchars($year_label) ?>
     </p>
   </div>
   <div class="flex items-center gap-3">
@@ -469,9 +492,9 @@ while ($r = $sr->fetch_assoc()) {
       <input type="hidden" name="subject_id" value="<?= $subject_id ?>">
       <input type="hidden" name="advisory_id" value="<?= $advisory_id ?>">
       <input type="hidden" name="school_year_id" value="<?= $school_year_id ?>">
-      <input type="hidden" name="subject_name" value="<?= $subject_name ?>">
-      <input type="hidden" name="class_name" value="<?= $class_name ?>">
-      <input type="hidden" name="year_label" value="<?= $year_label ?>">
+      <input type="hidden" name="subject_name" value="<?= htmlspecialchars($subject_name) ?>">
+      <input type="hidden" name="class_name" value="<?= htmlspecialchars($class_name) ?>">
+      <input type="hidden" name="year_label" value="<?= htmlspecialchars($year_label) ?>">
       <button type="submit" class="bg-orange-400 hover:bg-orange-500 px-4 py-2 rounded-lg font-semibold shadow text-white">← Back</button>
     </form>
   </div>
@@ -498,16 +521,27 @@ while ($r = $sr->fetch_assoc()) {
         <tr class="border-b" data-student-id="<?= intval($student['student_id']) ?>">
           <td class="px-4 py-3 border"><?= $i++ ?></td>
           <td class="px-4 py-3 border">
-            <?php if (!empty($student['face_image_path']) && file_exists(__DIR__ . '/../' . $student['face_image_path'])): ?>
-              <img src="../<?= $student['face_image_path'] ?>" alt="Face" class="w-10 h-10 rounded-full object-cover">
-            <?php elseif (!empty($student['avatar_path']) && file_exists(__DIR__ . '/../' . $student['avatar_path'])): ?>
-              <img src="../<?= $student['avatar_path'] ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
+            <?php
+              $facePath = $student['face_image_path'] ?? '';
+              $avatarPath = $student['avatar_path'] ?? '';
+              $faceAbs = resolve_relative_to_project($facePath);
+              $avatarAbs = resolve_relative_to_project($avatarPath);
+            ?>
+            <?php if (!empty($facePath) && $faceAbs): ?>
+              <?php
+                // present path as URL relative to parent directory (attempt to guess public path)
+                $urlFace = (strpos($facePath, '/') === 0) ? $facePath : ('../' . ltrim($facePath,'/'));
+              ?>
+              <img src="<?= htmlspecialchars($urlFace) ?>" alt="Face" class="w-10 h-10 rounded-full object-cover">
+            <?php elseif (!empty($avatarPath) && $avatarAbs): ?>
+              <?php $urlAvatar = (strpos($avatarPath, '/') === 0) ? $avatarPath : ('../' . ltrim($avatarPath,'/')); ?>
+              <img src="<?= htmlspecialchars($urlAvatar) ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
             <?php else: ?>
               <div class="w-10 h-10 bg-yellow-300 rounded-full flex items-center justify-center text-lg">👤</div>
             <?php endif; ?>
           </td>
           <td class="px-4 py-3 border name-cell"><?= htmlspecialchars($student['fullname']) ?></td>
-          <td class="px-4 py-3 border"><?= $student['gender'] ?></td>
+          <td class="px-4 py-3 border"><?= htmlspecialchars($student['gender']) ?></td>
           <td class="px-4 py-3 border">
             <button onclick="openEditModal(<?= $student['student_id'] ?>)" class="text-blue-600 text-sm hover:underline mr-2">✏️ Edit</button>
             <button onclick="openDeleteModal(<?= $student['student_id'] ?>)" class="text-red-600 text-sm hover:underline mr-2">🗑️ Delete</button>
@@ -688,7 +722,6 @@ while ($r = $sr->fetch_assoc()) {
     canvas.height = video.videoHeight || 240;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     retakeCapturedDataUrl = canvas.toDataURL('image/jpeg');
-    // show small preview by swapping video hidden? keep video visible; we keep captured data for sending
     document.getElementById('retakeHint').textContent = 'Captured — press Save to upload.';
   }
 
