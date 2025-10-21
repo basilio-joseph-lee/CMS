@@ -255,7 +255,24 @@
           }
 
           $conn->rollback();
-          file_put_contents($logFile, date('c') . " - Import exception: " . $e->getMessage() . PHP_EOL, FILE_APPEND);
+
+          // Build a richer debug payload
+          $dbg = [
+            'time' => date('c'),
+            'exception_message' => $e->getMessage(),
+            'mysqli_errno' => method_exists($conn, 'errno') ? $conn->errno : null,
+            'mysqli_error' => method_exists($conn, 'error') ? $conn->error : null,
+            // limited stack trace for context
+            'trace' => array_slice(explode("\n", $e->getTraceAsString()), 0, 8)
+          ];
+          $dbg_text = date('c') . " - Import exception: " . $e->getMessage()
+                    . "\nDB errno: " . ($dbg['mysqli_errno'] ?? 'N/A')
+                    . "\nDB error: " . ($dbg['mysqli_error'] ?? 'N/A')
+                    . "\nTrace: " . implode(" | ", $dbg['trace']) . "\n\n";
+
+          file_put_contents($logFile, $dbg_text, FILE_APPEND);
+          @error_log($dbg_text);
+
           $_SESSION['toast'] = "Import failed: DB error (see server logs).";
           $_SESSION['toast_type'] = "error";
           header("Location: view_students.php");
