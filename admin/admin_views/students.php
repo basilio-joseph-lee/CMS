@@ -2,6 +2,9 @@
 // admin_views/students.php
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../vendor/autoload.php';
+use PhpOffice\PhpSpreadsheet\IOFactory;
+
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 $conn->set_charset('utf8mb4');
 
@@ -220,6 +223,142 @@ if (isset($_GET['ajax']) && $_GET['ajax']==='1') {
   exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_from_file'])) {
+    $target_section_id   = intval($_POST['target_section_id'] ?? 0);
+    $target_subject_name = trim($_POST['target_subject_name'] ?? '');
+    $target_sy           = intval($_POST['target_school_year'] ?? 0);
+
+    if (!isset($_FILES['student_file']) || $_FILES['student_file']['error'] !== UPLOAD_ERR_OK) {
+        redirect_with_toast('File upload failed.', 'error');
+    }
+
+$tmp = $_FILES['student_file']['tmp_name'];
+$ext = strtolower(pathinfo($_FILES['student_file']['name'], PATHINFO_EXTENSION));
+
+$rows = [];
+
+if ($ext === 'csv') {
+    // --- CSV reader ---
+    if (($handle = fopen($tmp, 'r')) !== false) {
+        while (($data = fgetcsv($handle, 1000, ',')) !== false) {
+            $rows[] = $data;
+        }
+    } else {
+        redirect_with_toast('Cannot read CSV file.', 'error');
+    }
+} elseif (in_array($ext, ['xls', 'xlsx'])) {
+    // --- Excel reader ---
+    try {
+        $spreadsheet = IOFactory::load($tmp);
+        $worksheet = $spreadsheet->getActiveSheet();
+        foreach ($worksheet->toArray() as $row) {
+            $rows[] = $row;
+        }
+    } catch (Exception $e) {
+        redirect_with_toast('Failed to read Excel file: '.$e->getMessage(), 'error');
+    }
+} else {
+    redirect_with_toast('Unsupported file type. Please upload CSV or XLSX.', 'error');
+}
+
+
+    // 🔍 1. Try to find the subject using advisory_id (section) + subject_name + school_year_id
+    $stmtSub = $conn->prepare("
+        SELECT subject_id 
+        FROM subjects 
+        WHERE LOWER(TRIM(subject_name)) = LOWER(TRIM(?)) 
+          AND advisory_id = ? 
+          AND school_year_id = ? 
+        LIMIT 1
+    ");
+    $stmtSub->bind_param("sii", $target_subject_name, $target_section_id, $target_sy);
+    $stmtSub->execute();
+    $resSub = $stmtSub->get_result()->fetch_assoc();
+    $target_subject_id = $resSub['subject_id'] ?? 0;
+    $stmtSub->close();
+
+    // ⚙️ 2. If subject not found, try master_subjects then auto-create
+    if (!$target_subject_id) {
+        $stmtMaster = $conn->prepare("
+            SELECT master_subject_id 
+            FROM master_subjects 
+            WHERE LOWER(TRIM(subject_name)) = LOWER(TRIM(?)) 
+            LIMIT 1
+        ");
+        $stmtMaster->bind_param('s', $target_subject_name);
+        $stmtMaster->execute();
+        $resMaster = $stmtMaster->get_result()->fetch_assoc();
+        $stmtMaster->close();
+
+        if ($resMaster) {
+            // auto-create in subjects table
+            $stmtInsert = $conn->prepare("
+                INSERT INTO subjects (teacher_id, school_year_id, advisory_id, subject_name)
+                VALUES (NULL, ?, ?, ?)
+            ");
+            $stmtInsert->bind_param('iis', $target_sy, $target_section_id, $target_subject_name);
+            $stmtInsert->execute();
+            $target_subject_id = $conn->insert_id;
+            $stmtInsert->close();
+        } else {
+            redirect_with_toast('Subject not found in master_subjects.', 'error');
+        }
+    }
+
+    // 🧑‍🎓 3. Prepare statements for inserting students
+    $insertStudent = $conn->prepare("INSERT INTO students (fullname, gender) VALUES (?, ?)");
+    $checkStudent  = $conn->prepare("SELECT student_id FROM students WHERE fullname=? LIMIT 1");
+    $checkEnroll   = $conn->prepare("
+        SELECT 1 FROM student_enrollments 
+        WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=?
+    ");
+    $insertEnroll  = $conn->prepare("
+        INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id)
+        VALUES (?,?,?,?)
+    ");
+
+    $imported = 0; 
+    $skipped  = 0; 
+    $rownum   = 0;
+
+    // 📂 4. Process CSV rows
+    foreach ($rows as $rownum => $row) {
+    if ($rownum === 0) continue; // skip header row
+        $rownum++;
+        if ($rownum === 1) continue; // skip header row
+
+        $fullname = trim($row[0] ?? '');
+        $gender   = trim($row[1] ?? '');
+
+        if (!$fullname) continue;
+
+        // check if student exists
+        $checkStudent->bind_param('s', $fullname);
+        $checkStudent->execute();
+        $res = $checkStudent->get_result()->fetch_assoc();
+        $student_id = $res['student_id'] ?? 0;
+
+        if (!$student_id) {
+            $insertStudent->bind_param('ss', $fullname, $gender);
+            $insertStudent->execute();
+            $student_id = $conn->insert_id;
+        }
+
+        // check if already enrolled
+        $checkEnroll->bind_param("iiii", $student_id, $target_subject_id, $target_section_id, $target_sy);
+        $checkEnroll->execute();
+        $checkEnroll->store_result();
+        if ($checkEnroll->num_rows > 0) { $skipped++; continue; }
+
+        $insertEnroll->bind_param("iiii", $student_id, $target_subject_id, $target_section_id, $target_sy);
+        $insertEnroll->execute();
+        $imported++;
+    }
+
+    redirect_with_toast("Imported {$imported} students. Skipped {$skipped}.", $imported > 0 ? 'success' : 'error');
+}
+
+
 /* ---------- Initial list ---------- */
 $initialRows = fetch_enrollments($conn, $flt_section_id, $flt_subject_name, $flt_sy, $q);
 ?>
@@ -241,6 +380,8 @@ $initialRows = fetch_enrollments($conn, $flt_section_id, $flt_subject_name, $flt
 <div class="flex items-center justify-between mb-6">
   <div></div><!-- spacer -->
   <div class="flex gap-2">
+    <button onclick="openFileImportModal()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow font-medium">📂 Import File</button>
+
     <button onclick="openImportModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow font-medium">⬇️ Import</button>
     <a id="btnAddStudent"
        href="admin.php?page=add_student_admin"
@@ -401,7 +542,50 @@ $initialRows = fetch_enrollments($conn, $flt_section_id, $flt_subject_name, $flt
   </form>
 </div>
 
+
+<!-- File Import Modal -->
+<div id="fileImportModal" class="fixed inset-0 z-50 hidden bg-black bg-opacity-50 flex justify-center items-center">
+  <form method="POST" enctype="multipart/form-data" class="bg-white p-6 rounded-lg shadow-lg w-96 space-y-4">
+    <h2 class="text-lg font-bold">📂 Import Students from File</h2>
+
+    <label class="block text-sm font-semibold">Select CSV File</label>
+   <input type="file" name="student_file" accept=".csv, .xls, .xlsx" required class="w-full border rounded px-3 py-2" />
+
+    <label class="block text-sm font-semibold">Section</label>
+    <select name="target_section_id" class="w-full border rounded px-3 py-2" required>
+      <option value="">-- Select section --</option>
+      <?php foreach ($sections as $sec): ?>
+        <option value="<?= (int)$sec['advisory_id'] ?>"><?= htmlspecialchars($sec['class_name']) ?></option>
+      <?php endforeach; ?>
+    </select>
+
+    <label class="block text-sm font-semibold">Subject</label>
+    <select name="target_subject_name" class="w-full border rounded px-3 py-2" required>
+      <option value="">-- Select subject --</option>
+      <?php foreach ($subjectsNames as $name): ?>
+        <option value="<?= htmlspecialchars($name) ?>"><?= htmlspecialchars($name) ?></option>
+      <?php endforeach; ?>
+    </select>
+
+    <label class="block text-sm font-semibold">School Year</label>
+    <select name="target_school_year" class="w-full border rounded px-3 py-2" required>
+      <?php foreach ($schoolYears as $sy): ?>
+        <option value="<?= (int)$sy['school_year_id'] ?>"><?= htmlspecialchars($sy['year_label']) ?></option>
+      <?php endforeach; ?>
+    </select>
+
+    <div class="flex justify-end gap-2 pt-4">
+      <button type="button" onclick="closeFileImportModal()" class="text-gray-600">Cancel</button>
+      <button type="submit" name="import_from_file" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Upload & Import</button>
+    </div>
+  </form>
+</div>
+
 <script>
+
+  function openFileImportModal(){ document.getElementById('fileImportModal').classList.remove('hidden'); }
+function closeFileImportModal(){ document.getElementById('fileImportModal').classList.add('hidden'); }
+
 function buildQS(params){ const esc=encodeURIComponent; const parts=[]; for(const k in params){ if(params[k]!==undefined && params[k]!==null) parts.push(esc(k)+'='+esc(params[k])); } return parts.join('&'); }
 function debounce(fn,delay=250){ let t; return (...args)=>{ clearTimeout(t); t=setTimeout(()=>fn(...args),delay); }; }
 
