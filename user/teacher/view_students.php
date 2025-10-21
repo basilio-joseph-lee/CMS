@@ -31,8 +31,8 @@ ob_start();
    * Helper: build upload path for student files (relative to project root from this file)
    */
   function build_student_upload_path($student_id, $prefix = 'face', $ext = 'jpg') {
-      $dir = 'uploads/students';
-      if (!is_dir($dir)) {
+      $dir = '/student_faces';
+      if (!is_dir(filename: $dir)) {
           @mkdir($dir, 0755, true);
       }
       $filename = $prefix . '_' . $student_id . '_' . time() . '.' . $ext;
