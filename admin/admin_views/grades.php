@@ -171,6 +171,13 @@ $results = $conn->query($query);
   </div>
   <?php endif; ?>
 
+  <!-- Student Name realtime search (search-only) -->
+  <div class="mb-4">
+    <label class="block font-medium mb-1 text-gray-700">Search by Student Name</label>
+    <input id="grade_search_q" type="search" placeholder="Type full name (realtime)..." class="w-1/3 border border-gray-300 rounded-lg p-2" oninput="filterGrades()">
+    <button onclick="clearGradeSearch()" class="ml-2 text-sm text-gray-600 underline">Clear search</button>
+  </div>
+
   <div class="overflow-x-auto">
     <table class="min-w-full border border-gray-300 rounded-lg overflow-hidden">
       <thead class="bg-blue-600 text-white text-sm">
@@ -185,7 +192,7 @@ $results = $conn->query($query);
           <th class="px-4 py-2 text-center">Action</th>
         </tr>
       </thead>
-      <tbody class="text-center text-sm bg-white">
+      <tbody class="text-center text-sm bg-white" id="grades_tbody">
         <?php if ($results && $results->num_rows > 0): ?>
           <?php while ($row = $results->fetch_assoc()): ?>
             <?php
@@ -197,7 +204,7 @@ $results = $conn->query($query);
                 default  => '',
               };
             ?>
-            <tr class="border-t border-gray-200">
+            <tr class="border-t border-gray-200 grade-row" data-fullname="<?= htmlspecialchars($row['fullname'], ENT_QUOTES) ?>">
               <td class="px-4 py-2 text-left"><?= $row['fullname'] ?></td>
               <td><?= $row['q1'] ?? '-' ?></td>
               <td><?= $row['q2'] ?? '-' ?></td>
@@ -299,5 +306,44 @@ $results = $conn->query($query);
     document.getElementById('editModal').classList.remove('flex');
     document.getElementById('editModal').classList.add('hidden');
   }
-</script>
 
+  // -----------------------------
+  // Realtime Student Name filter
+  // -----------------------------
+  const gradeSearchInput = document.getElementById('grade_search_q');
+  const gradesTbody = document.getElementById('grades_tbody');
+
+  function clearGradeSearch() {
+    gradeSearchInput.value = '';
+    filterGrades();
+  }
+
+  function filterGrades() {
+    const q = (gradeSearchInput.value || '').trim().toLowerCase();
+    const rows = gradesTbody.querySelectorAll('.grade-row');
+    let anyVisible = false;
+
+    rows.forEach(row => {
+      const fullname = (row.getAttribute('data-fullname') || '').toLowerCase();
+      const visible = q === '' || fullname.indexOf(q) !== -1;
+      row.style.display = visible ? '' : 'none';
+      if (visible) anyVisible = true;
+    });
+
+    // show "no results" row if none visible
+    let noRow = document.getElementById('no_results_row_grades');
+    if (!anyVisible) {
+      if (!noRow) {
+        noRow = document.createElement('tr');
+        noRow.id = 'no_results_row_grades';
+        noRow.innerHTML = '<td colspan="8" class="px-4 py-4 text-gray-600 text-center italic">No students match your search.</td>';
+        gradesTbody.appendChild(noRow);
+      }
+    } else {
+      if (noRow) noRow.remove();
+    }
+  }
+
+  // run once on load
+  filterGrades();
+</script>
