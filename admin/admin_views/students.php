@@ -339,12 +339,12 @@ if ($ext === 'csv') {
         $student_id = $res['student_id'] ?? 0;
 
         if (!$student_id) {
-            $insertStudent->bind_param('ss', $fullname, $gender);
-            $code = uniqid("STD"); // e.g. STD6712e0987a
-            $insertStudent->bind_param('sss', $fullname, $gender, $code);
+// insert new student
+$code = uniqid("STD"); // e.g STD6712e0987a
+$insertStudent->bind_param("sss", $fullname, $gender, $code);
+$insertStudent->execute();
+$student_id = $conn->insert_id;
 
-            $insertStudent->execute();
-            $student_id = $conn->insert_id;
         }
 
         // check if already enrolled
