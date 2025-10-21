@@ -79,13 +79,14 @@ try {
 
     $nowPH = (new DateTime('now', new DateTimeZone('Asia/Manila')))->format('Y-m-d H:i:s');
 
-    // If attendance: record to attendance_records (defensive)
+    // ---------------------------
+    // Only record attendance for 'attendance' action
+    // ---------------------------
     if ($t === 'attendance') {
         $subject_id = isset($_SESSION['subject_id']) ? (int)$_SESSION['subject_id'] : (int)($data['subject_id'] ?? 0);
         $advisory_id = isset($_SESSION['advisory_id']) ? (int)$_SESSION['advisory_id'] : (int)($data['advisory_id'] ?? 0);
         $school_year_id = isset($_SESSION['school_year_id']) ? (int)$_SESSION['school_year_id'] : (int)($data['school_year_id'] ?? 0);
 
-        // updated: use timestamp instead of created_at
         $stmtA = $conn->prepare("INSERT INTO attendance_records (student_id, subject_id, advisory_id, school_year_id, status, timestamp) VALUES (?,?,?,?,?,?)");
         if ($stmtA) {
             $status = 'Present';
@@ -97,7 +98,9 @@ try {
         }
     }
 
-    // insert behavior log
+    // ---------------------------
+    // Insert behavior log (always for all actions including 'im_back')
+    // ---------------------------
     $stmt = $conn->prepare("INSERT INTO behavior_logs (student_id, action_type, timestamp) VALUES (?, ?, ?)");
     if (!$stmt) throw new Exception('Prepare failed: '.$conn->error);
     $stmt->bind_param('iss', $student_id, $t, $nowPH);
@@ -130,9 +133,9 @@ try {
         'insert_id'  => (int)$insertId,
     ];
 
-    // ------------------------
-    // Notify parent via SMS when attendance logged
-    // ------------------------
+    // ---------------------------
+    // Notify parent via SMS ONLY for 'attendance', NOT 'im_back'
+    // ---------------------------
     if ($t === 'attendance') {
         $sms_meta = ['sent'=>false, 'reason'=>'not_attempted'];
 
