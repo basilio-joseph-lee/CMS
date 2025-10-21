@@ -12,18 +12,27 @@ $ACTIVE_SY_LABEL = $active['year_label'] ?? '';
 
 /* ---------- Toast ---------- */
 $toast = '';
-if (isset($_GET['success'])) {
-  $map = [
-    'add'    => 'Student enrolled successfully!',
-    'update' => 'Student updated successfully!',
-    'delete' => 'Student deleted successfully!',
-    'import' => 'Students imported successfully!',
-  ];
-  $toast = $map[$_GET['success']] ?? '';
+$toast_type = 'success';
+if (isset($_SESSION['toast'])) {
+    $toast = $_SESSION['toast'];
+    $toast_type = $_SESSION['toast_type'] ?? 'success';
+    unset($_SESSION['toast'], $_SESSION['toast_type']);
+} elseif (isset($_GET['success'])) {
+    $map = [
+        'add'    => 'Student enrolled successfully!',
+        'update' => 'Student updated successfully!',
+        'delete' => 'Student deleted successfully!',
+        'import' => 'Students imported successfully!',
+    ];
+    $toast = $map[$_GET['success']] ?? '';
+    $toast_type = 'success';
 }
-function redirect_with_toast($type) {
-  echo "<script>location.href='admin.php?page=students&success=$type';</script>";
-  exit;
+
+function redirect_with_toast($msg, $type='success') {
+    $_SESSION['toast'] = $msg;
+    $_SESSION['toast_type'] = $type;
+    header("Location: admin.php?page=students");
+    exit;
 }
 
 /* ---------- Options ---------- */
