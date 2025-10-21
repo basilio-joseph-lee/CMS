@@ -351,10 +351,19 @@ $fail  = isset($_GET['sms_failed']) ? (int)$_GET['sms_failed'] : null;
     </script>
   <?php endif; ?>
 
+  <!-- Search by Posted By (realtime) -->
+  <div class="bg-white rounded-xl shadow p-4 mb-4">
+    <label class="block text-sm text-gray-600 mb-1">Search by Posted By</label>
+    <div class="flex items-center gap-2">
+      <input id="posted_search" type="search" placeholder="Type poster name (e.g. 'Admin' or teacher full name)..." class="w-1/3 border rounded-lg px-3 py-2">
+      <button type="button" onclick="clearPostedSearch()" class="text-sm text-gray-600 underline">Clear</button>
+    </div>
+  </div>
+
   <!-- Table -->
   <div class="bg-white rounded-xl shadow overflow-x-auto">
     <div class="overflow-y-auto" style="max-height: 400px;">
-      <table class="min-w-full text-sm table-auto">
+      <table class="min-w-full text-sm table-auto" id="ann_table">
         <thead class="bg-gray-100 text-gray-700">
           <tr>
             <th class="text-left px-4 py-3">Title</th>
@@ -367,11 +376,12 @@ $fail  = isset($_GET['sms_failed']) ? (int)$_GET['sms_failed'] : null;
             <th class="text-center px-3 py-3">Actions</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100">
+        <tbody class="divide-y divide-gray-100" id="ann_tbody">
           <?php if (empty($rows)): ?>
             <tr><td colspan="8" class="px-4 py-8 text-center text-gray-500">No announcements found.</td></tr>
           <?php else: foreach($rows as $row): ?>
-            <tr class="hover:bg-gray-50">
+            <?php $postedBy = $row['teacher_name'] ?: 'Admin'; ?>
+            <tr class="hover:bg-gray-50 ann-row" data-postedby="<?= h($postedBy) ?>">
               <td data-label="Title" class="px-4 py-3 font-medium text-gray-900"><?= h($row['title']) ?></td>
               <td data-label="Message" class="px-4 py-3 text-gray-700 break-words max-w-[200px]">
                 <div class="truncate-2"><?= nl2br(h($row['message'])) ?></div>
@@ -552,6 +562,46 @@ document.addEventListener('click', (e) => {
   if (e.target.id === 'createModal') closeCreate();
   if (e.target.id === 'editModal') closeEdit();
 });
+
+/* -------------------------
+   Realtime "Posted By" search
+   ------------------------- */
+const postedSearch = document.getElementById('posted_search');
+const annTbody = document.getElementById('ann_tbody');
+
+function clearPostedSearch() {
+  postedSearch.value = '';
+  filterPostedBy();
+}
+
+function filterPostedBy() {
+  const q = (postedSearch.value || '').trim().toLowerCase();
+  const rows = annTbody.querySelectorAll('.ann-row');
+  let anyVisible = false;
+  rows.forEach(r => {
+    const postedBy = (r.getAttribute('data-postedby') || '').toLowerCase();
+    const visible = q === '' || postedBy.includes(q);
+    r.style.display = visible ? '' : 'none';
+    if (visible) anyVisible = true;
+  });
+
+  // show a "no results" row when nothing matches
+  let noRow = document.getElementById('no_results_postedby');
+  if (!anyVisible) {
+    if (!noRow) {
+      noRow = document.createElement('tr');
+      noRow.id = 'no_results_postedby';
+      noRow.innerHTML = '<td colspan="8" class="px-4 py-6 text-center text-gray-500 italic">No announcements match your search.</td>';
+      annTbody.appendChild(noRow);
+    }
+  } else {
+    if (noRow) noRow.remove();
+  }
+}
+
+postedSearch.addEventListener('input', filterPostedBy);
+// initialize (in case)
+filterPostedBy();
 </script>
 </body>
 </html>
