@@ -1,8 +1,44 @@
   <?php
   session_start();
 
-  // Debug output removed (logs are still written to logs/import_errors.log by code where needed)
+  // DEBUG: show last lines of import log (temporary — remove when done)
+  // Only echo debug HTML for normal page loads. For AJAX/JSON requests (fetch_advisories, JSON POST retake),
+  // we LOG to the same file instead to avoid corrupting JSON responses.
   $logFile = __DIR__ . '/logs/import_errors.log';
+
+  // determine if this request is AJAX/JSON
+  $is_ajax = false;
+  // common AJAX header
+  if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest') {
+      $is_ajax = true;
+  }
+  // JSON content-type (body)
+  if (!$is_ajax && !empty($_SERVER['CONTENT_TYPE']) && stripos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
+      $is_ajax = true;
+  }
+  // explicit AJAX action used by this page
+  if (!$is_ajax && isset($_GET['action']) && $_GET['action'] === 'fetch_advisories') {
+      $is_ajax = true;
+  }
+
+  if (file_exists($logFile) && is_readable($logFile)) {
+      $lines = array_slice(file($logFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES), -40);
+      if (!empty($lines)) {
+          $payload = implode("\n", $lines);
+          if ($is_ajax) {
+              // Don't echo HTML — write a short marker to PHP error_log so you can inspect later.
+              // Also add a short copy to the import_errors.log (rotate/append) to keep debugging centralized.
+              $short = date('c') . " - DEBUG (ajax request) last import_errors.log lines:\n" . $payload . "\n";
+              @file_put_contents($logFile, $short, FILE_APPEND);
+              // Optionally also to PHP error_log for server-level logs
+              @error_log($short);
+              // do NOT echo anything (so JSON responses stay pure)
+          } else {
+              // normal page render — show the helpful debug box
+              echo '<div style="max-width:1000px;margin:10px auto;padding:10px;background:#111;color:#fff;border-radius:6px;font-family:monospace;"><strong>DEBUG: import_errors.log (last lines)</strong><pre style="white-space:pre-wrap;">' . htmlspecialchars($payload) . '</pre></div>';
+          }
+      }
+  }
 
   include '../../config/teacher_guard.php';
   include "../../config/db.php";
