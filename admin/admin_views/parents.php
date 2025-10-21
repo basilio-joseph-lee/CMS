@@ -2,9 +2,6 @@
 // --- Handle Toast Logic & Actions ---
 
 include("../config/db.php");
-require 'vendor/autoload.php'; // PhpSpreadsheet autoload
-
-use PhpOffice\PhpSpreadsheet\IOFactory;
 
 $toast = '';
 if (isset($_GET['success'])) {
@@ -53,7 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect_with_toast('delete');
   }
 
-  // Import Parents from Spreadsheet
+  // Import Parents from CSV
   if (isset($_POST['import_parents']) && isset($_FILES['parents_file'])) {
     $fileTmpPath = $_FILES['parents_file']['tmp_name'];
     $fileName = $_FILES['parents_file']['name'];
@@ -75,26 +72,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           $stmt->close();
         }
         fclose($file);
-      } else if ($fileExt === 'xlsx' || $fileExt === 'xls') {
-        $spreadsheet = IOFactory::load($fileTmpPath);
-        $sheet = $spreadsheet->getActiveSheet();
-        foreach ($sheet->getRowIterator() as $index => $row) {
-          if ($index === 1) continue; // skip header
-          $cellIterator = $row->getCellIterator();
-          $cellIterator->setIterateOnlyExistingCells(false);
-          $data = [];
-          foreach ($cellIterator as $cell) $data[] = $cell->getValue();
-          $fullname = $data[0];
-          $email = $data[1];
-          $mobile = $data[2];
-          $password = password_hash($data[3], PASSWORD_DEFAULT);
-          $stmt = $conn->prepare("INSERT INTO parents (fullname, email, password, mobile_number) VALUES (?, ?, ?, ?)");
-          $stmt->bind_param("ssss", $fullname, $email, $password, $mobile);
-          $stmt->execute();
-          $stmt->close();
-        }
       } else {
-        throw new Exception("Unsupported file type.");
+        throw new Exception("Only CSV files are supported.");
       }
       redirect_with_toast('import');
     } catch (Exception $e) {
@@ -126,7 +105,6 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
     <button onclick="document.getElementById('importModal').classList.remove('hidden')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">📁 Import Parents</button>
   </div>
 
-  <!-- Full Name search -->
   <div class="w-1/3">
     <label class="block text-sm text-gray-600 mb-1">Search by Full Name</label>
     <input id="filter_q" type="search" placeholder="Type full name (realtime)..." class="w-full border p-2 rounded" oninput="filterRows()">
@@ -210,11 +188,11 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
 <!-- Import Modal -->
 <div id="importModal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center hidden z-50">
   <div class="bg-white p-6 rounded shadow max-w-md w-full fade-in">
-    <h3 class="text-xl font-bold mb-4">Import Parents from Spreadsheet</h3>
+    <h3 class="text-xl font-bold mb-4">Import Parents from CSV</h3>
     <form method="POST" enctype="multipart/form-data">
       <div class="mb-3">
-        <label>Select Excel/CSV file</label>
-        <input type="file" name="parents_file" accept=".csv, .xlsx" class="w-full border p-2 rounded" required>
+        <label>Select CSV file</label>
+        <input type="file" name="parents_file" accept=".csv" class="w-full border p-2 rounded" required>
       </div>
       <button type="submit" name="import_parents" class="bg-green-600 text-white px-4 py-2 rounded">Import</button>
       <button type="button" onclick="document.getElementById('importModal').classList.add('hidden')" class="ml-2 text-gray-600">Cancel</button>
