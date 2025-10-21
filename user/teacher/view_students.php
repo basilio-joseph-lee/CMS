@@ -13,25 +13,63 @@ if (file_exists($logFile) && is_readable($logFile)) {
 include '../../config/teacher_guard.php';
 include "../../config/db.php";
 
-
 if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
 /**
- * NEW: Helper function to build relative upload path
+ * Helper: build upload path for student files (relative to project root from this file)
  */
-function build_student_upload_path($student_id, $ext = 'jpg') {
+function build_student_upload_path($student_id, $prefix = 'face', $ext = 'jpg') {
     $dir = 'uploads/students';
     if (!is_dir($dir)) {
         @mkdir($dir, 0755, true);
     }
-    $filename = $student_id . '_' . time() . '.' . $ext;
+    $filename = $prefix . '_' . $student_id . '_' . time() . '.' . $ext;
     return $dir . '/' . $filename;
 }
 
 /**
- * Handle edit (existing)
+ * AJAX endpoint: fetch advisories for a given subject (same school year)
+ */
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'fetch_advisories') {
+    header('Content-Type: application/json; charset=utf-8');
+    $src_subject = intval($_GET['subject_id'] ?? 0);
+    $school_year_id = intval($_SESSION['school_year_id'] ?? 0);
+
+    if ($src_subject <= 0 || $school_year_id <= 0) {
+        echo json_encode(['status' => 'error', 'message' => 'Invalid parameters.']);
+        exit;
+    }
+
+    $qry = $conn->prepare("
+        SELECT DISTINCT e.advisory_id, ac.class_name
+        FROM student_enrollments e
+        LEFT JOIN advisory_classes ac ON ac.advisory_id = e.advisory_id
+        WHERE e.subject_id = ? AND e.school_year_id = ?
+        ORDER BY ac.class_name ASC
+    ");
+    if (!$qry) {
+        echo json_encode(['status' => 'error', 'message' => 'DB prepare failed.']);
+        exit;
+    }
+    $qry->bind_param("ii", $src_subject, $school_year_id);
+    if (!$qry->execute()) {
+        echo json_encode(['status' => 'error', 'message' => 'DB execute failed.']);
+        exit;
+    }
+    $res = $qry->get_result();
+    $out = [];
+    while ($r = $res->fetch_assoc()) {
+        $name = $r['class_name'] ?? ('Advisory ' . $r['advisory_id']);
+        $out[] = ['advisory_id' => intval($r['advisory_id']), 'class_name' => $name];
+    }
+    echo json_encode(['status' => 'ok', 'advisories' => $out]);
+    exit;
+}
+
+/**
+ * Handle basic edit
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
   $id = $_POST['student_id'];
@@ -47,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_student'])) {
 }
 
 /**
- * Handle delete (existing)
+ * Handle delete
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
   $id = $_POST['student_id'];
@@ -61,22 +99,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
 }
 
 /**
- * NEW: Handle import from another subject (POST to same file)
- * Expects: import_subject_id (source subject), optional flag skip_existing
+ * Import handling (kept same as previous, requiring source_subject_id + source_advisory_id)
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     $source_subject_id = intval($_POST['source_subject_id'] ?? 0);
+    $source_advisory_id = intval($_POST['source_advisory_id'] ?? 0);
+    $skip_existing = isset($_POST['skip_existing']) ? true : false;
+
     $target_subject_id = intval($_SESSION['subject_id']); // current subject
     $advisory_id = intval($_SESSION['advisory_id']);
     $school_year_id = intval($_SESSION['school_year_id']);
     $teacher_id = intval($_SESSION['teacher_id']);
 
-    // prepare a small logger
     $logDir = __DIR__ . '/logs';
     if (!is_dir($logDir)) @mkdir($logDir, 0755, true);
     $logFile = $logDir . '/import_errors.log';
 
-    // Basic permissions check: ensure teacher owns source subject (adjust query to your schema if needed)
+    if ($source_subject_id <= 0 || $source_advisory_id <= 0) {
+        file_put_contents($logFile, date('c') . " - Import failed: invalid source subject/advisory (s:{$source_subject_id}, a:{$source_advisory_id})." . PHP_EOL, FILE_APPEND);
+        $_SESSION['toast'] = "Import failed: invalid source selection.";
+        $_SESSION['toast_type'] = "error";
+        header("Location: view_students.php");
+        exit;
+    }
+
     $checkStmt = $conn->prepare("SELECT 1 FROM subjects WHERE subject_id = ? AND teacher_id = ? LIMIT 1"); // ADJUST IF NEEDED
     if (!$checkStmt) {
         file_put_contents($logFile, date('c') . " - prepare(checkStmt) failed: " . $conn->error . PHP_EOL, FILE_APPEND);
@@ -93,7 +139,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         header("Location: view_students.php");
         exit;
     }
-    // buffer permission check result
     $checkStmt->store_result();
     if ($checkStmt->num_rows === 0) {
         $checkStmt->free_result();
@@ -106,22 +151,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     $checkStmt->free_result();
     $checkStmt->close();
 
-    // Begin transaction
     $conn->begin_transaction();
-    // initialize statement vars for cleanup in catch
     $fetchSrc = $checkEnroll = $insertEnroll = null;
     try {
-        // Fetch students in source subject using bind_result (avoid get_result)
-        $fetchSrc = $conn->prepare("SELECT s.student_id FROM students s JOIN student_enrollments e ON s.student_id = e.student_id WHERE e.subject_id = ? AND e.advisory_id = ? AND e.school_year_id = ?");
+        $fetchSrc = $conn->prepare("
+            SELECT s.student_id
+            FROM students s
+            JOIN student_enrollments e ON s.student_id = e.student_id
+            WHERE e.subject_id = ? AND e.advisory_id = ? AND e.school_year_id = ?
+        ");
         if (!$fetchSrc) {
             throw new Exception("prepare(fetchSrc) failed: " . $conn->error);
         }
-        $fetchSrc->bind_param("iii", $source_subject_id, $advisory_id, $school_year_id);
+        $fetchSrc->bind_param("iii", $source_subject_id, $source_advisory_id, $school_year_id);
         if (!$fetchSrc->execute()) {
             throw new Exception("execute(fetchSrc) failed: " . $fetchSrc->error);
         }
 
-        // IMPORTANT: buffer the resultset so we can run other queries safely
         $fetchSrc->store_result();
         $fetchSrc->bind_result($f_student_id);
 
@@ -136,7 +182,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         while ($fetchSrc->fetch()) {
             $student_id = intval($f_student_id);
 
-            // check existing using store_result() to get num_rows
             $checkEnroll->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id);
             if (!$checkEnroll->execute()) {
                 throw new Exception("execute(checkEnroll) failed for student {$student_id}: " . $checkEnroll->error);
@@ -149,7 +194,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
             }
             $checkEnroll->free_result();
 
-            // insert enrollment
             $insertEnroll->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id);
             if (!$insertEnroll->execute()) {
                 throw new Exception("execute(insertEnroll) failed for student {$student_id}: " . $insertEnroll->error);
@@ -157,7 +201,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
             $imported++;
         }
 
-        // free fetch results and close statements before commit
         $fetchSrc->free_result();
         $fetchSrc->close();
         $checkEnroll->close();
@@ -169,9 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         header("Location: view_students.php");
         exit;
     } catch (Exception $e) {
-        // free/close any open statements before rollback to avoid "commands out of sync"
         if ($fetchSrc !== null) {
-            // these calls may throw if statement already closed — suppress warnings
             @ $fetchSrc->free_result();
             @ $fetchSrc->close();
         }
@@ -183,9 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
             @ $insertEnroll->close();
         }
 
-        // rollback
         $conn->rollback();
-        // write actual DB/exception details to log (safe: not shown to user)
         file_put_contents($logFile, date('c') . " - Import exception: " . $e->getMessage() . PHP_EOL, FILE_APPEND);
         $_SESSION['toast'] = "Import failed: DB error (see server logs).";
         $_SESSION['toast_type'] = "error";
@@ -195,115 +234,148 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
 }
 
 /**
- * NEW: Handle retake image (POST with file upload)
- * Expects: retake_student_id and file input 'retake_image_file'
- * This supports both AJAX (fetch) and normal form submission.
+ * NEW: Retake via AJAX (camera capture + descriptor)
+ * Accepts JSON POST (X-Requested-With + application/json) containing:
+ * { retake_image:1, retake_student_id:123, image: "data:image/jpeg;base64,...", descriptor: [..] }
  */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['retake_image'])) {
-    $student_id = intval($_POST['retake_student_id'] ?? 0);
-    $teacher_id = intval($_SESSION['teacher_id']);
-    // Permission check: ensure teacher can modify this student (simple check: does the teacher teach target subject?)
-    // We check teacher ownership of current session subject (teacher should have access to this student's subject)
-    $subject_id = intval($_SESSION['subject_id']);
-    $checkPerm = $conn->prepare("SELECT 1 FROM subjects WHERE subject_id = ? AND teacher_id = ? LIMIT 1"); // ADJUST IF NEEDED
-    $checkPerm->bind_param("ii", $subject_id, $teacher_id);
-    $checkPerm->execute();
-    $permRes = $checkPerm->get_result();
-    if ($permRes->num_rows === 0) {
-        // If AJAX expected JSON
-        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'Permission denied.']);
-            exit;
-        } else {
-            $_SESSION['toast'] = "Permission denied for retake.";
-            $_SESSION['toast_type'] = "error";
-            header("Location: view_students.php");
-            exit;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // detect JSON payload (AJAX)
+    $isJson = false;
+    $raw = file_get_contents('php://input');
+    $json = null;
+    if ($raw) {
+        $decoded = json_decode($raw, true);
+        if (json_last_error() === JSON_ERROR_NONE && isset($decoded['retake_image'])) {
+            $isJson = true;
+            $json = $decoded;
         }
     }
 
-    // Validate file
-    if (!isset($_FILES['retake_image_file']) || $_FILES['retake_image_file']['error'] !== UPLOAD_ERR_OK) {
-        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'No image uploaded.']);
-            exit;
-        } else {
-            $_SESSION['toast'] = "No image uploaded.";
-            $_SESSION['toast_type'] = "error";
-            header("Location: view_students.php");
+    if ($isJson && intval($json['retake_image'] ?? 0) === 1) {
+        $student_id = intval($json['retake_student_id'] ?? 0);
+        $imgData = $json['image'] ?? '';
+        $descriptor = $json['descriptor'] ?? null; // could be array or null
+
+        $logDir = __DIR__ . '/logs';
+        if (!is_dir($logDir)) @mkdir($logDir, 0755, true);
+        $logFile = $logDir . '/import_errors.log';
+
+        if ($student_id <= 0 || !$imgData) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['status' => 'error', 'message' => 'Invalid payload.']);
             exit;
         }
-    }
 
-    $file = $_FILES['retake_image_file'];
-    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png'];
-    if (!array_key_exists($file['type'], $allowed)) {
-        header('Content-Type: application/json');
-        echo json_encode(['status' => 'error', 'message' => 'Invalid image type (jpeg/png only).']);
+        // parse base64
+        if (preg_match('/^data:image\/(\w+);base64,/', $imgData, $m)) {
+            $imgType = strtolower($m[1]) === 'png' ? 'png' : 'jpg';
+            $imgBase = substr($imgData, strpos($imgData, ',') + 1);
+            $imgDecoded = base64_decode($imgBase);
+            if ($imgDecoded === false) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['status' => 'error', 'message' => 'Failed to decode image.']);
+                exit;
+            }
+        } else {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['status' => 'error', 'message' => 'Invalid image format.']);
+            exit;
+        }
+
+        // make upload dirs
+        $destRel = build_student_upload_path($student_id, 'face', $imgType);
+        $destAbs = __DIR__ . '/' . $destRel;
+        if (!is_dir(dirname($destAbs))) @mkdir(dirname($destAbs), 0755, true);
+
+        // backup previous face file (optional)
+        $stmtPrev = $conn->prepare("SELECT face_image_path FROM students WHERE student_id = ? LIMIT 1");
+        if ($stmtPrev) {
+            $stmtPrev->bind_param("i", $student_id);
+            $stmtPrev->execute();
+            $prevR = $stmtPrev->get_result();
+            if ($rowPrev = $prevR->fetch_assoc()) {
+                $prevPath = $rowPrev['face_image_path'];
+                if (!empty($prevPath) && file_exists(__DIR__ . '/' . $prevPath)) {
+                    $backupDir = 'uploads/students/backup';
+                    if (!is_dir($backupDir)) @mkdir($backupDir, 0755, true);
+                    $backupName = $backupDir . '/face_' . $student_id . '_' . time() . '.' . pathinfo($prevPath, PATHINFO_EXTENSION);
+                    @copy(__DIR__ . '/' . $prevPath, __DIR__ . '/' . $backupName);
+                }
+            }
+            $stmtPrev->close();
+        }
+
+        // save file
+        if (file_put_contents($destAbs, $imgDecoded) === false) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['status' => 'error', 'message' => 'Failed to save image on server.']);
+            exit;
+        }
+
+        // Save descriptor: prefer DB column `descriptor_json` if exists; otherwise write to file
+        $descriptorSavedToDB = false;
+        $descriptor_json_string = '';
+        if (is_array($descriptor) || is_string($descriptor)) {
+            // normalize to JSON string
+            $descriptor_json_string = is_string($descriptor) ? $descriptor : json_encode($descriptor);
+            // check if column exists
+            $colRes = $conn->query("SHOW COLUMNS FROM students LIKE 'descriptor_json'");
+            if ($colRes && $colRes->num_rows > 0) {
+                $upd = $conn->prepare("UPDATE students SET face_image_path = ?, descriptor_json = ? WHERE student_id = ?");
+                if ($upd) {
+                    $upd->bind_param("ssi", $destRel, $descriptor_json_string, $student_id);
+                    if (!$upd->execute()) {
+                        // DB write failed, log
+                        file_put_contents($logFile, date('c') . " - descriptor DB write failed: " . $upd->error . PHP_EOL, FILE_APPEND);
+                    } else {
+                        $descriptorSavedToDB = true;
+                    }
+                    $upd->close();
+                }
+            }
+        }
+
+        // If descriptor not saved to DB, write descriptor json to file for safekeeping
+        if (!$descriptorSavedToDB && $descriptor_json_string) {
+            $descDir = 'uploads/students/descriptors';
+            if (!is_dir($descDir)) @mkdir($descDir, 0755, true);
+            $descPathRel = $descDir . '/student_' . $student_id . '_' . time() . '.json';
+            file_put_contents(__DIR__ . '/' . $descPathRel, $descriptor_json_string);
+            // still update face_image_path in DB
+            $upd2 = $conn->prepare("UPDATE students SET face_image_path = ? WHERE student_id = ?");
+            if ($upd2) {
+                $upd2->bind_param("si", $destRel, $student_id);
+                if (!$upd2->execute()) {
+                    file_put_contents($logFile, date('c') . " - face DB update failed: " . $upd2->error . PHP_EOL, FILE_APPEND);
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode(['status' => 'error', 'message' => 'DB update failed.']);
+                    exit;
+                }
+                $upd2->close();
+            }
+        } else {
+            // descriptor was saved to DB already (or there was no descriptor). Ensure face_image_path updated if not already.
+            if (!$descriptorSavedToDB) {
+                $upd3 = $conn->prepare("UPDATE students SET face_image_path = ? WHERE student_id = ?");
+                if ($upd3) {
+                    $upd3->bind_param("si", $destRel, $student_id);
+                    if (!$upd3->execute()) {
+                        file_put_contents($logFile, date('c') . " - face DB update failed: " . $upd3->error . PHP_EOL, FILE_APPEND);
+                        header('Content-Type: application/json; charset=utf-8');
+                        echo json_encode(['status' => 'error', 'message' => 'DB update failed.']);
+                        exit;
+                    }
+                    $upd3->close();
+                }
+            }
+        }
+
+        // success
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['status' => 'success', 'message' => 'Face updated', 'image' => $destRel]);
         exit;
     }
-    $ext = $allowed[$file['type']];
-    $destRel = build_student_upload_path($student_id, $ext);
-    $destAbs = __DIR__ . '/' . $destRel;
-
-    if (!move_uploaded_file($file['tmp_name'], $destAbs)) {
-        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'Failed to save uploaded file.']);
-            exit;
-        } else {
-            $_SESSION['toast'] = "Failed to save uploaded image.";
-            $_SESSION['toast_type'] = "error";
-            header("Location: view_students.php");
-            exit;
-        }
-    }
-
-    // Optionally create backup of previous image
-    $stmtPrev = $conn->prepare("SELECT avatar_path FROM students WHERE student_id = ? LIMIT 1");
-    $stmtPrev->bind_param("i", $student_id);
-    $stmtPrev->execute();
-    $prevR = $stmtPrev->get_result();
-    if ($rowPrev = $prevR->fetch_assoc()) {
-        $prevPath = $rowPrev['avatar_path'];
-        if (!empty($prevPath) && file_exists(__DIR__ . '/' . $prevPath)) {
-            $backupDir = 'uploads/students/backup';
-            if (!is_dir($backupDir)) @mkdir($backupDir, 0755, true);
-            $backupName = $backupDir . '/' . $student_id . '_' . time() . '.' . pathinfo($prevPath, PATHINFO_EXTENSION);
-            @copy(__DIR__ . '/' . $prevPath, __DIR__ . '/' . $backupName);
-        }
-    }
-
-    // Update DB
-    $update = $conn->prepare("UPDATE students SET avatar_path = ? WHERE student_id = ?");
-    $update->bind_param("si", $destRel, $student_id);
-    if ($update->execute()) {
-        // If AJAX -> return JSON with new image URL
-        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
-            header('Content-Type: application/json');
-            // Build URL relative to site root. We'll return a relative path; frontend will use it.
-            echo json_encode(['status' => 'success', 'message' => 'Image updated', 'image' => $destRel]);
-            exit;
-        } else {
-            $_SESSION['toast'] = "Image updated successfully.";
-            $_SESSION['toast_type'] = "success";
-            header("Location: view_students.php");
-            exit;
-        }
-    } else {
-        if (!empty($_SERVER['HTTP_X_REQUESTED_WITH'])) {
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'error', 'message' => 'DB update failed.']);
-            exit;
-        } else {
-            $_SESSION['toast'] = "DB update failed when saving image.";
-            $_SESSION['toast_type'] = "error";
-            header("Location: view_students.php");
-            exit;
-        }
-    }
+    // else continue to other POST handlers (import/edit/delete) above
 }
 
 /**
@@ -318,9 +390,9 @@ $year_label = $_SESSION['year_label'];
 $teacherName = $_SESSION['teacher_fullname'] ?? 'Teacher';
 
 /**
- * Fetch students for current subject (existing)
+ * Fetch students for current subject
  */
-$stmt = $conn->prepare("SELECT s.student_id, s.fullname, s.gender, s.avatar_path 
+$stmt = $conn->prepare("SELECT s.student_id, s.fullname, s.gender, s.avatar_path, s.face_image_path 
                         FROM students s
                         JOIN student_enrollments e ON s.student_id = e.student_id
                         WHERE e.subject_id = ? AND e.advisory_id = ? AND e.school_year_id = ?");
@@ -330,8 +402,7 @@ $result = $stmt->get_result();
 $students = $result->fetch_all(MYSQLI_ASSOC);
 
 /**
- * NEW: Fetch teacher's other subjects to populate import dropdown (ADJUST IF NEEDED)
- * We exclude current subject.
+ * Fetch teacher's other subjects to populate import dropdown (exclude current subject)
  */
 $teacher_id = intval($_SESSION['teacher_id']);
 $subjects_for_import = [];
@@ -422,10 +493,12 @@ while ($r = $sr->fetch_assoc()) {
     </thead>
     <tbody class="text-gray-800 bg-white">
       <?php $i = 1; foreach ($students as $student): ?>
-        <tr class="border-b">
+        <tr class="border-b" data-student-id="<?= intval($student['student_id']) ?>">
           <td class="px-4 py-3 border"><?= $i++ ?></td>
           <td class="px-4 py-3 border">
-            <?php if (!empty($student['avatar_path']) && file_exists(__DIR__ . '/../' . $student['avatar_path'])): ?>
+            <?php if (!empty($student['face_image_path']) && file_exists(__DIR__ . '/../' . $student['face_image_path'])): ?>
+              <img src="../<?= $student['face_image_path'] ?>" alt="Face" class="w-10 h-10 rounded-full object-cover">
+            <?php elseif (!empty($student['avatar_path']) && file_exists(__DIR__ . '/../' . $student['avatar_path'])): ?>
               <img src="../<?= $student['avatar_path'] ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
             <?php else: ?>
               <div class="w-10 h-10 bg-yellow-300 rounded-full flex items-center justify-center text-lg">👤</div>
@@ -479,19 +552,25 @@ while ($r = $sr->fetch_assoc()) {
   </div>
 <?php endforeach; ?>
 
-<!-- NEW: Import Modal -->
+<!-- Import Modal (unchanged) -->
 <div id="importModal" class="fixed inset-0 z-50 hidden bg-black bg-opacity-50 flex justify-center items-center">
-  <form method="POST" class="bg-white p-6 rounded-lg shadow-lg w-96 space-y-4">
+  <form method="POST" id="importForm" class="bg-white p-6 rounded-lg shadow-lg w-96 space-y-4">
     <h2 class="text-lg font-bold">Import students from another subject</h2>
     <label class="block text-sm font-semibold">Source Subject</label>
-    <select name="source_subject_id" class="w-full border rounded px-3 py-2" required>
+    <select name="source_subject_id" id="source_subject_id" class="w-full border rounded px-3 py-2" required onchange="loadAdvisories(this.value)">
       <option value="">-- Select subject --</option>
       <?php foreach ($subjects_for_import as $s): ?>
         <option value="<?= intval($s['subject_id']) ?>"><?= htmlspecialchars($s['subject_name']) ?></option>
       <?php endforeach; ?>
     </select>
+
+    <label class="block text-sm font-semibold mt-2">Source Advisory / Section</label>
+    <select name="source_advisory_id" id="source_advisory_id" class="w-full border rounded px-3 py-2" required>
+      <option value="">-- Select advisory --</option>
+    </select>
+
     <label class="flex items-center gap-2 text-sm">
-      <input type="checkbox" name="skip_existing" checked>
+      <input type="checkbox" name="skip_existing" id="skip_existing" checked>
       Skip students already enrolled in this subject
     </label>
     <div class="flex justify-end gap-2 pt-4">
@@ -501,31 +580,31 @@ while ($r = $sr->fetch_assoc()) {
   </form>
 </div>
 
-<!-- NEW: Retake Modal -->
+<!-- RETAKE Modal: Camera + Capture + Descriptor -->
 <div id="retakeModal" class="fixed inset-0 z-50 hidden bg-black bg-opacity-50 flex justify-center items-center">
-  <form id="retakeForm" method="POST" enctype="multipart/form-data" class="bg-white p-6 rounded-lg shadow-lg w-96 space-y-4">
-    <input type="hidden" name="retake_image" value="1">
-    <input type="hidden" id="retake_student_id" name="retake_student_id" value="">
+  <div class="bg-white p-6 rounded-lg shadow-lg w-96 space-y-4">
+    <input type="hidden" id="retake_student_id_field">
     <h2 id="retakeTitle" class="text-lg font-bold">Retake Image</h2>
-    <p class="text-sm text-gray-600">Use your camera or choose a file to retake the student's image.</p>
-    <input type="file" name="retake_image_file" id="retake_image_file" accept="image/*" capture="environment" class="w-full">
-    <div class="flex justify-end gap-2 pt-4">
-      <button type="button" onclick="closeModal('retakeModal')" class="text-gray-600">Cancel</button>
-      <button type="button" onclick="submitRetake()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Upload</button>
+    <div class="w-full h-60 bg-blue-100 rounded-xl mb-2 flex items-center justify-center overflow-hidden">
+      <video id="retakeVideo" width="320" height="240" autoplay class="rounded"></video>
+      <canvas id="retakeCanvas" width="320" height="240" style="display:none;"></canvas>
     </div>
-  </form>
+    <div class="flex gap-3 justify-center">
+      <button type="button" onclick="retakeCapture()" class="bg-orange-400 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-bold">Capture</button>
+      <button type="button" onclick="retakeClear()" class="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2 rounded-lg font-bold">Clear</button>
+      <button type="button" onclick="submitRetakeAjax()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold">Save</button>
+    </div>
+    <p id="retakeHint" class="text-sm text-gray-600 mt-2">Capture student's face. This will update their face photo and descriptor for recognition.</p>
+    <div class="flex justify-end">
+      <button type="button" onclick="closeModal('retakeModal')" class="text-gray-600">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <script>
-  function openEditModal(id) {
-    document.getElementById('editModal' + id).classList.remove('hidden');
-  }
-  function openDeleteModal(id) {
-    document.getElementById('deleteModal' + id).classList.remove('hidden');
-  }
-  function closeModal(id) {
-    document.getElementById(id).classList.add('hidden');
-  }
+  function openEditModal(id) { document.getElementById('editModal' + id).classList.remove('hidden'); }
+  function openDeleteModal(id) { document.getElementById('deleteModal' + id).classList.remove('hidden'); }
+  function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 
   document.getElementById('searchInput').addEventListener('input', function () {
     const filter = this.value.toLowerCase();
@@ -538,64 +617,186 @@ while ($r = $sr->fetch_assoc()) {
   });
 
   // Import modal
-  function openImportModal() {
-    document.getElementById('importModal').classList.remove('hidden');
+  function openImportModal() { document.getElementById('importModal').classList.remove('hidden'); }
+  function loadAdvisories(subjectId) {
+    const advSelect = document.getElementById('source_advisory_id');
+    advSelect.innerHTML = '<option value="">Loading...</option>';
+    if (!subjectId) { advSelect.innerHTML = '<option value="">-- Select advisory --</option>'; return; }
+    fetch('view_students.php?action=fetch_advisories&subject_id=' + encodeURIComponent(subjectId))
+      .then(r => r.json())
+      .then(json => {
+        if (json.status === 'ok') {
+          let html = '<option value="">-- Select advisory --</option>';
+          if (json.advisories.length === 0) html = '<option value="">No advisories found for that subject</option>';
+          json.advisories.forEach(a => { html += '<option value="' + a.advisory_id + '">' + escapeHtml(a.class_name) + '</option>'; });
+          advSelect.innerHTML = html;
+        } else { advSelect.innerHTML = '<option value="">Error loading advisories</option>'; console.error(json); }
+      }).catch(err => { advSelect.innerHTML = '<option value="">Network error</option>'; console.error(err); });
   }
+  function escapeHtml(unsafe) { return unsafe.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;"); }
 
-  // Retake modal: set student id and show
+  document.getElementById('importForm').addEventListener('submit', function (e) {
+    const subj = document.getElementById('source_subject_id').value;
+    const adv = document.getElementById('source_advisory_id').value;
+    if (!subj) { e.preventDefault(); alert('Please select a source subject.'); return; }
+    if (!adv) { e.preventDefault(); alert('Please select a source advisory/section.'); return; }
+  });
+
+  // ------------------- RETAKE camera logic -------------------
+  let retakeStream = null;
+  let retakeCapturedDataUrl = '';
+
+  // Start camera when opening modal
   function openRetakeModal(studentId, fullname) {
-    document.getElementById('retake_student_id').value = studentId;
+    document.getElementById('retake_student_id_field').value = studentId;
     document.getElementById('retakeTitle').textContent = 'Retake Image — ' + fullname;
-    document.getElementById('retake_image_file').value = null;
     document.getElementById('retakeModal').classList.remove('hidden');
+    startRetakeCamera();
   }
 
-  // Submit retake via AJAX to same page (so no redirect) to update preview live
-  function submitRetake() {
-    const form = document.getElementById('retakeForm');
-    const fd = new FormData(form);
-    const studentId = document.getElementById('retake_student_id').value;
-    const fileInput = document.getElementById('retake_image_file');
-    if (fileInput.files.length === 0) {
-      alert('Please choose or capture an image first.');
+  function startRetakeCamera() {
+    const video = document.getElementById('retakeVideo');
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert('Camera not supported in this browser.');
       return;
     }
-
-    // Show simple loading state
-    const btn = event ? event.target : null;
-
-    fetch('view_students.php', {
-      method: 'POST',
-      body: fd,
-      headers: {
-        'X-Requested-With': 'XMLHttpRequest'
-      }
-    }).then(r => r.json())
-    .then(data => {
-      if (data.status === 'success') {
-        // update avatar img in table if present (relative path returned)
-        const rel = data.image;
-        // Find the table row with studentId and replace img or fallback element
-        // We used the student id in onclick only. Let's scan table rows by button onclick attribute.
-        // Simple approach: reload the page to reflect change (keeps logic simple and reliable)
-        closeModal('retakeModal');
-        // small toast before reload
-        const t = document.createElement('div');
-        t.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg bg-green-500 text-white font-semibold text-center';
-        t.textContent = 'Image updated';
-        document.body.appendChild(t);
-        setTimeout(() => {
-          location.reload();
-        }, 900);
-      } else {
-        alert(data.message || 'Failed to upload image.');
-      }
-    }).catch(err => {
-      console.error(err);
-      alert('Network error.');
-    });
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        retakeStream = stream;
+        video.srcObject = stream;
+        video.play();
+      }).catch(err => {
+        console.error('Camera error', err);
+        alert('Could not access camera.');
+      });
   }
+
+  function stopRetakeCamera() {
+    if (retakeStream) {
+      retakeStream.getTracks().forEach(t => t.stop());
+      retakeStream = null;
+    }
+  }
+
+  function retakeCapture() {
+    const video = document.getElementById('retakeVideo');
+    const canvas = document.getElementById('retakeCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = video.videoWidth || 320;
+    canvas.height = video.videoHeight || 240;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    retakeCapturedDataUrl = canvas.toDataURL('image/jpeg');
+    // show small preview by swapping video hidden? keep video visible; we keep captured data for sending
+    document.getElementById('retakeHint').textContent = 'Captured — press Save to upload.';
+  }
+
+  function retakeClear() {
+    retakeCapturedDataUrl = '';
+    document.getElementById('retakeHint').textContent = 'Capture cleared.';
+  }
+
+  window.addEventListener('beforeunload', () => stopRetakeCamera());
+
+  // Compute descriptor using face-api (same approach as add-student)
+  (function(){
+    const APP_BASE = (location.pathname.startsWith('/CMS/')) ? '/CMS' : '';
+    const MODELS = APP_BASE + '/models';
+    let _modelsPromise = null;
+    async function loadModelsOnce() {
+      if (_modelsPromise) return _modelsPromise;
+      _modelsPromise = (async () => {
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODELS);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODELS);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODELS);
+        return true;
+      })();
+      return _modelsPromise;
+    }
+
+    async function computeDescriptorFromCanvas(canvas) {
+      await loadModelsOnce();
+      const det = await faceapi.detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.4 })).withFaceLandmarks().withFaceDescriptor();
+      if (!det || !det.descriptor) return null;
+      return Array.from(det.descriptor);
+    }
+
+    // submit retake via AJAX: capture image + descriptor
+    window.submitRetakeAjax = async function() {
+      const studentId = document.getElementById('retake_student_id_field').value;
+      if (!studentId) { alert('No student selected.'); return; }
+      if (!retakeCapturedDataUrl) { alert('Please capture a face first.'); return; }
+
+      // prepare canvas for descriptor computation
+      const canvas = document.getElementById('retakeCanvas');
+      if (!canvas) { alert('Internal canvas missing.'); return; }
+
+      // compute descriptor (best effort; if fails, still upload image)
+      let descriptorArr = null;
+      try {
+        descriptorArr = await computeDescriptorFromCanvas(canvas);
+      } catch (err) {
+        console.warn('Descriptor compute failed', err);
+        descriptorArr = null;
+      }
+
+      // build payload
+      const payload = {
+        retake_image: 1,
+        retake_student_id: parseInt(studentId, 10),
+        image: retakeCapturedDataUrl,
+        descriptor: descriptorArr // could be null
+      };
+
+      // send
+      try {
+        const resp = await fetch('view_students.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+          body: JSON.stringify(payload)
+        });
+        const json = await resp.json();
+        if (json.status === 'success') {
+          // update row image preview in table if present
+          const rows = document.querySelectorAll('#studentsTable tbody tr');
+          rows.forEach(r => {
+            if (r.getAttribute('data-student-id') == studentId) {
+              const imgCell = r.querySelector('td:nth-child(2)');
+              if (imgCell) {
+                // use returned relative path; construct URL relative to parent
+                const img = document.createElement('img');
+                img.src = '../' + json.image;
+                img.className = 'w-10 h-10 rounded-full object-cover';
+                img.alt = 'Face';
+                imgCell.innerHTML = '';
+                imgCell.appendChild(img);
+              }
+            }
+          });
+
+          // show success small toast
+          const t = document.createElement('div');
+          t.className = 'fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg bg-green-500 text-white font-semibold text-center';
+          t.textContent = 'Face updated';
+          document.body.appendChild(t);
+          setTimeout(()=>{ t.remove(); }, 1200);
+
+          // close modal & stop camera
+          closeModal('retakeModal');
+          stopRetakeCamera();
+          retakeCapturedDataUrl = '';
+        } else {
+          alert(json.message || 'Upload failed');
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Network error while uploading retake.');
+      }
+    };
+  })();
 </script>
+
+<!-- face-api for descriptor computation -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 
 </body>
 </html>
