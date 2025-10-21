@@ -310,9 +310,15 @@ ob_start();
           }
 
           // make upload dirs
-          $destRel = build_student_upload_path($student_id, 'face', $imgType);
-          $destAbs = __DIR__ . '/' . $destRel;
-          if (!is_dir(dirname($destAbs))) @mkdir(dirname($destAbs), 0755, true);
+         // compute relative + absolute paths
+$destRel = build_student_upload_path($student_id, 'face', $imgType); // e.g. "student_faces/face_123_160..."
+$destAbs = rtrim($_SERVER['DOCUMENT_ROOT'], '/') . '/' . $destRel;      // absolute path on disk
+
+// ensure folder exists (build_student_upload_path already creates it, this is just defensive)
+if (!is_dir(dirname($destAbs))) {
+    @mkdir(dirname($destAbs), 0755, true);
+}
+
 
           // backup previous face file (optional)
           $stmtPrev = $conn->prepare("SELECT face_image_path FROM students WHERE student_id = ? LIMIT 1");
