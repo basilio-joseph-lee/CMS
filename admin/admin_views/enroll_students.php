@@ -82,11 +82,23 @@ while ($p = $parents->fetch_assoc()) {
   <div class="toast"><?= $toast ?></div>
 <?php endif; ?>
 
-<a href="admin.php?page=add_student_admin" 
-   class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow">
-   ➕ Add Student
-</a>
+<div class="mb-4 flex items-center justify-between">
+  <!-- Add button -->
+  <button onclick="document.getElementById('addModal').classList.remove('hidden')" 
+          class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+    ➕ Add Student
+  </button>
 
+  <!-- Search input -->
+  <div class="w-1/3">
+    <label class="block text-sm text-gray-600 mb-1">Search by Full Name</label>
+    <input id="searchInput" type="search" placeholder="Type full name..." 
+           class="w-full border p-2 rounded" oninput="filterStudents()">
+    <div class="mt-2 text-right">
+      <button class="text-sm text-gray-600 underline" onclick="clearSearch()">Clear search</button>
+    </div>
+  </div>
+</div>
 
 <table class="min-w-full bg-white shadow rounded">
   <thead class="bg-blue-100 text-gray-700">
@@ -97,9 +109,9 @@ while ($p = $parents->fetch_assoc()) {
       <th class="py-2 px-4 text-left">Actions</th>
     </tr>
   </thead>
-  <tbody>
+  <tbody id="studentsBody">
     <?php while ($s = $students->fetch_assoc()): ?>
-    <tr class="border-t">
+    <tr class="border-t student-row" data-fullname="<?= htmlspecialchars($s['fullname'], ENT_QUOTES) ?>">
       <td class="py-2 px-4"><?= htmlspecialchars($s['fullname']) ?></td>
       <td class="py-2 px-4"><?= htmlspecialchars($s['gender']) ?></td>
       <td class="py-2 px-4 text-sm italic text-gray-500"><?= $parentMap[$s['parent_id']] ?? 'None' ?></td>
@@ -190,3 +202,42 @@ while ($p = $parents->fetch_assoc()) {
     </form>
   </div>
 </div>
+
+<script>
+  // Realtime Full Name search
+  const searchInput = document.getElementById('searchInput');
+  const studentsBody = document.getElementById('studentsBody');
+
+  function clearSearch() {
+    searchInput.value = '';
+    filterStudents();
+  }
+
+  function filterStudents() {
+    const q = searchInput.value.trim().toLowerCase();
+    const rows = studentsBody.querySelectorAll('.student-row');
+    let anyVisible = false;
+
+    rows.forEach(row => {
+      const fullname = (row.getAttribute('data-fullname') || '').toLowerCase();
+      const visible = q === '' || fullname.includes(q);
+      row.style.display = visible ? '' : 'none';
+      if (visible) anyVisible = true;
+    });
+
+    // "No results" row
+    let noRow = document.getElementById('no_results_row_students');
+    if (!anyVisible) {
+      if (!noRow) {
+        noRow = document.createElement('tr');
+        noRow.id = 'no_results_row_students';
+        noRow.innerHTML = '<td colspan="4" class="py-6 px-3 text-center text-gray-500 italic">No students found.</td>';
+        studentsBody.appendChild(noRow);
+      }
+    } else {
+      if (noRow) noRow.remove();
+    }
+  }
+
+  filterStudents();
+</script>
