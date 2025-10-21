@@ -34,7 +34,7 @@ $resSub = $stmtSub->get_result();
 while ($row = $resSub->fetch_assoc()) { $subjects[] = $row; }
 $stmtSub->close();
 
-/* ---------- Attendance list (matches your schema) ---------- */
+/* ---------- Attendance list ---------- */
 $sql = "
   SELECT
     a.attendance_id,
@@ -52,12 +52,12 @@ $sql = "
 $params = [$ACTIVE_SY_ID];
 $types  = "i";
 
-if ($selected_section !== '') {           // advisory filter
+if ($selected_section !== '') {
   $sql .= " AND a.advisory_id = ? ";
   $params[] = (int)$selected_section;
   $types   .= "i";
 }
-if ($selected_subject !== '') {           // subject filter
+if ($selected_subject !== '') {
   $sql .= " AND a.subject_id = ? ";
   $params[] = (int)$selected_subject;
   $types   .= "i";
@@ -70,10 +70,13 @@ if (count($params)) { $stmt->bind_param($types, ...$params); }
 $stmt->execute();
 $list = $stmt->get_result();
 ?>
+
 <div class="bg-white rounded-xl shadow p-6">
   <!-- Header -->
   <div class="flex items-center justify-between mb-4">
-    <h3 class="text-lg font-semibold text-gray-800">Attendance Records <span class="text-gray-500 text-sm">(SY: <?= htmlspecialchars($ACTIVE_SY_LABEL) ?>)</span></h3>
+    <h3 class="text-lg font-semibold text-gray-800">
+      Attendance Records <span class="text-gray-500 text-sm">(SY: <?= htmlspecialchars($ACTIVE_SY_LABEL) ?>)</span>
+    </h3>
   </div>
 
   <!-- Filters -->
@@ -111,7 +114,14 @@ $list = $stmt->get_result();
     </div>
   </form>
 
-  <!-- Table with vertical scroll (adjust max-height as you prefer) -->
+  <!-- Realtime Student Name search -->
+  <div class="mb-4">
+    <label class="block text-sm text-gray-600 mb-1">Search by Student Name</label>
+    <input id="attendance_search" type="search" placeholder="Type full name..." class="w-1/3 border rounded-lg px-3 py-2" oninput="filterAttendance()">
+    <button type="button" onclick="clearAttendanceSearch()" class="ml-2 text-sm text-gray-600 underline">Clear</button>
+  </div>
+
+  <!-- Table -->
   <div class="overflow-y-auto rounded-lg" style="max-height: 450px;">
     <table class="min-w-full text-sm">
       <thead class="bg-gray-100 text-gray-700">
@@ -123,11 +133,11 @@ $list = $stmt->get_result();
           <th class="text-left px-4 py-3">Timestamp</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-gray-100">
+      <tbody class="divide-y divide-gray-100" id="attendance_tbody">
         <?php if ($list->num_rows === 0): ?>
           <tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">No attendance records found.</td></tr>
         <?php else: while($row = $list->fetch_assoc()): ?>
-          <tr class="hover:bg-gray-50">
+          <tr class="hover:bg-gray-50 attendance-row" data-fullname="<?= htmlspecialchars($row['fullname'], ENT_QUOTES) ?>">
             <td class="px-4 py-3 font-medium text-gray-900"><?= htmlspecialchars($row['fullname']) ?></td>
             <td class="px-4 py-3 text-gray-700"><?= htmlspecialchars($row['class_name'] ?? '-') ?></td>
             <td class="px-4 py-3 text-gray-700"><?= htmlspecialchars($row['subject_name'] ?? '-') ?></td>
@@ -154,3 +164,38 @@ $list = $stmt->get_result();
     </table>
   </div>
 </div>
+
+<script>
+  const attendanceSearch = document.getElementById('attendance_search');
+  const attendanceTbody = document.getElementById('attendance_tbody');
+
+  function clearAttendanceSearch() {
+    attendanceSearch.value = '';
+    filterAttendance();
+  }
+
+  function filterAttendance() {
+    const q = (attendanceSearch.value || '').trim().toLowerCase();
+    const rows = attendanceTbody.querySelectorAll('.attendance-row');
+    let anyVisible = false;
+
+    rows.forEach(row => {
+      const fullname = (row.getAttribute('data-fullname') || '').toLowerCase();
+      const visible = q === '' || fullname.includes(q);
+      row.style.display = visible ? '' : 'none';
+      if (visible) anyVisible = true;
+    });
+
+    let noRow = document.getElementById('no_results_attendance');
+    if (!anyVisible) {
+      if (!noRow) {
+        noRow = document.createElement('tr');
+        noRow.id = 'no_results_attendance';
+        noRow.innerHTML = '<td colspan="5" class="px-4 py-6 text-center text-gray-500 italic">No students match your search.</td>';
+        attendanceTbody.appendChild(noRow);
+      }
+    } else if (noRow) {
+      noRow.remove();
+    }
+  }
+</script>
