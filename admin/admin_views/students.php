@@ -306,7 +306,7 @@ if ($ext === 'csv') {
     }
 
     // 🧑‍🎓 3. Prepare statements for inserting students
-    $insertStudent = $conn->prepare("INSERT INTO students (fullname, gender) VALUES (?, ?)");
+    $insertStudent = $conn->prepare("INSERT INTO students (fullname, gender, student_code) VALUES (?, ?, ?)");
     $checkStudent  = $conn->prepare("SELECT student_id FROM students WHERE fullname=? LIMIT 1");
     $checkEnroll   = $conn->prepare("
         SELECT 1 FROM student_enrollments 
@@ -340,6 +340,9 @@ if ($ext === 'csv') {
 
         if (!$student_id) {
             $insertStudent->bind_param('ss', $fullname, $gender);
+            $code = uniqid("STD"); // e.g. STD6712e0987a
+            $insertStudent->bind_param('sss', $fullname, $gender, $code);
+
             $insertStudent->execute();
             $student_id = $conn->insert_id;
         }
