@@ -77,123 +77,138 @@ try {
         $advisory_id = isset($_SESSION['advisory_id']) ? (int)$_SESSION['advisory_id'] : (int)($data['advisory_id'] ?? 0);
         $school_year_id = isset($_SESSION['school_year_id']) ? (int)$_SESSION['school_year_id'] : (int)($data['school_year_id'] ?? 0);
 
-        $stmtA = $conn->prepare("INSERT INTO attendance_records (student_id, subject_id, advisory_id, school_year_id, status, timestamp) VALUES (?,?,?,?,?,?)");
-        if ($stmtA) {
-            $status = 'Present';
-            $stmtA->bind_param("iiiiss", $student_id, $subject_id, $advisory_id, $school_year_id, $status, $nowPH);
-            $stmtA->execute();
-            $stmtA->close();
-        } else {
-            error_log('attendance_records prepare failed: '.$conn->error);
-        }
-
-        // --- SMS section ---
-        $sms_meta = ['sent'=>false, 'reason'=>'not_attempted'];
-        $sqlP = "
-            SELECT s.fullname AS student_name,
-                   p.parent_id AS parent_id,
-                   p.fullname AS parent_name,
-                   p.mobile_number AS parent_mobile
-            FROM students s
-            LEFT JOIN parents p ON p.parent_id = s.parent_id
-            WHERE s.student_id = ?
+        // ✅ Check if attendance already exists today
+        $check = $conn->prepare("
+            SELECT 1
+            FROM attendance_records
+            WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=? 
+              AND DATE(`timestamp`) = CURDATE()
             LIMIT 1
-        ";
-        $s2 = $conn->prepare($sqlP);
-        if ($s2) {
-            $s2->bind_param('i', $student_id);
-            $s2->execute();
-            $rowP = $s2->get_result()->fetch_assoc();
-            $s2->close();
-        } else {
-            $rowP = null;
-        }
+        ");
+        $check->bind_param("iiii", $student_id, $subject_id, $advisory_id, $school_year_id);
+        $check->execute();
+        $exists = $check->get_result()->num_rows > 0;
+        $check->close();
 
-        if (empty($rowP)) {
-            $stmtCols = $conn->prepare("SELECT fullname, parent_mobile, parent_phone, guardian_mobile, guardian_phone, mobile, phone FROM students WHERE student_id = ? LIMIT 1");
-            if ($stmtCols) {
-                $stmtCols->bind_param('i', $student_id);
-                $stmtCols->execute();
-                $rowCols = $stmtCols->get_result()->fetch_assoc();
-                $stmtCols->close();
+        if (!$exists) {
+            $stmtA = $conn->prepare("INSERT INTO attendance_records (student_id, subject_id, advisory_id, school_year_id, status, timestamp) VALUES (?,?,?,?,?,?)");
+            if ($stmtA) {
+                $status = 'Present';
+                $stmtA->bind_param("iiiiss", $student_id, $subject_id, $advisory_id, $school_year_id, $status, $nowPH);
+                $stmtA->execute();
+                $stmtA->close();
             } else {
-                $rowCols = null;
+                error_log('attendance_records prepare failed: '.$conn->error);
             }
 
-            if (!empty($rowCols)) {
-                $rowP = [
-                    'student_name' => $rowCols['fullname'] ?? null,
-                    'parent_id'    => null,
-                    'parent_name'  => null,
-                    'parent_mobile'=> $rowCols['parent_mobile'] ?? ($rowCols['parent_phone'] ?? ($rowCols['guardian_mobile'] ?? ($rowCols['guardian_phone'] ?? ($rowCols['mobile'] ?? $rowCols['phone'] ?? null))))
+            // --- SMS section only for new attendance ---
+            $sms_meta = ['sent'=>false, 'reason'=>'not_attempted'];
+            $sqlP = "
+                SELECT s.fullname AS student_name,
+                       p.parent_id AS parent_id,
+                       p.fullname AS parent_name,
+                       p.mobile_number AS parent_mobile
+                FROM students s
+                LEFT JOIN parents p ON p.parent_id = s.parent_id
+                WHERE s.student_id = ?
+                LIMIT 1
+            ";
+            $s2 = $conn->prepare($sqlP);
+            if ($s2) {
+                $s2->bind_param('i', $student_id);
+                $s2->execute();
+                $rowP = $s2->get_result()->fetch_assoc();
+                $s2->close();
+            } else {
+                $rowP = null;
+            }
+
+            if (empty($rowP)) {
+                $stmtCols = $conn->prepare("SELECT fullname, parent_mobile, parent_phone, guardian_mobile, guardian_phone, mobile, phone FROM students WHERE student_id = ? LIMIT 1");
+                if ($stmtCols) {
+                    $stmtCols->bind_param('i', $student_id);
+                    $stmtCols->execute();
+                    $rowCols = $stmtCols->get_result()->fetch_assoc();
+                    $stmtCols->close();
+                } else {
+                    $rowCols = null;
+                }
+
+                if (!empty($rowCols)) {
+                    $rowP = [
+                        'student_name' => $rowCols['fullname'] ?? null,
+                        'parent_id'    => null,
+                        'parent_name'  => null,
+                        'parent_mobile'=> $rowCols['parent_mobile'] ?? ($rowCols['parent_phone'] ?? ($rowCols['guardian_mobile'] ?? ($rowCols['guardian_phone'] ?? ($rowCols['mobile'] ?? $rowCols['phone'] ?? null))))
+                    ];
+                }
+            }
+
+            $parent_mobile_raw = $rowP['parent_mobile'] ?? null;
+            $studentName = $rowP['student_name'] ?? 'Your child';
+            $parent_id = isset($rowP['parent_id']) && $rowP['parent_id'] !== '' ? (int)$rowP['parent_id'] : null;
+
+            $to_e164 = null;
+            if (function_exists('ph_e164')) {
+                $to_e164 = ph_e164($parent_mobile_raw);
+            } else {
+                if ($parent_mobile_raw) {
+                    $digits = preg_replace('/\D+/', '', $parent_mobile_raw);
+                    if (strlen($digits) === 11 && str_starts_with($digits, '0')) $to_e164 = '63' . substr($digits, 1);
+                    elseif (strlen($digits) === 10 && str_starts_with($digits, '9')) $to_e164 = '63' . $digits;
+                    elseif (strlen($digits) === 12 && str_starts_with($digits, '63')) $to_e164 = $digits;
+                }
+            }
+
+            $senderName = $MOCEAN_SENDER ?? ($MOCEAN_SENDER = 'MySchoolness');
+            $msg = "{$studentName} is marked PRESENT on {$nowPH}. — {$senderName}";
+
+            $conn->query("CREATE TABLE IF NOT EXISTS sms_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                student_id INT NULL,
+                parent_id INT NULL,
+                to_e164 VARCHAR(32) NOT NULL,
+                message TEXT NOT NULL,
+                provider VARCHAR(32) DEFAULT 'mocean',
+                provider_msgid VARCHAR(128) NULL,
+                status VARCHAR(64) NULL,
+                http_code INT NULL,
+                provider_error VARCHAR(255) NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )");
+
+            if ($to_e164 && function_exists('send_sms')) {
+                $smsRes = send_sms($parent_mobile_raw, $msg);
+                $ok = $smsRes['ok'] ?? false;
+                $http = $smsRes['http'] ?? null;
+                $prov_status = $smsRes['provider_status'] ?? ($smsRes['status'] ?? null);
+                $prov_msgid = $smsRes['msgid'] ?? ($smsRes['message-id'] ?? null);
+                $prov_error = $smsRes['error'] ?? null;
+
+                $stmtL = $conn->prepare("INSERT INTO sms_logs (student_id,parent_id,to_e164,message,provider,provider_msgid,status,http_code,provider_error) VALUES (?,?,?,?,?,?,?,?,?)");
+                if ($stmtL) {
+                    $prov = 'mocean';
+                    $toLog = $smsRes['to'] ?? $to_e164;
+                    $stmtL->bind_param("iissssiss", $student_id, $parent_id, $toLog, $msg, $prov, $prov_msgid, $prov_status, $http, $prov_error);
+                    $stmtL->execute();
+                    $stmtL->close();
+                }
+
+                $sms_meta = [
+                    'sent' => $ok ? true : false,
+                    'to'   => $smsRes['to'] ?? $to_e164,
+                    'http' => $http,
+                    'provider_status' => $prov_status,
+                    'provider_msgid' => $prov_msgid,
+                    'error' => $prov_error,
                 ];
+                $response['sms'] = $sms_meta;
             }
-        }
-
-        $parent_mobile_raw = $rowP['parent_mobile'] ?? null;
-        $studentName = $rowP['student_name'] ?? 'Your child';
-        $parent_id = isset($rowP['parent_id']) && $rowP['parent_id'] !== '' ? (int)$rowP['parent_id'] : null;
-
-        $to_e164 = null;
-        if (function_exists('ph_e164')) {
-            $to_e164 = ph_e164($parent_mobile_raw);
-        } else {
-            if ($parent_mobile_raw) {
-                $digits = preg_replace('/\D+/', '', $parent_mobile_raw);
-                if (strlen($digits) === 11 && str_starts_with($digits, '0')) $to_e164 = '63' . substr($digits, 1);
-                elseif (strlen($digits) === 10 && str_starts_with($digits, '9')) $to_e164 = '63' . $digits;
-                elseif (strlen($digits) === 12 && str_starts_with($digits, '63')) $to_e164 = $digits;
-            }
-        }
-
-        $senderName = $MOCEAN_SENDER ?? ($MOCEAN_SENDER = 'MySchoolness');
-        $msg = "{$studentName} is marked PRESENT on {$nowPH}. — {$senderName}";
-
-        $conn->query("CREATE TABLE IF NOT EXISTS sms_logs (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            student_id INT NULL,
-            parent_id INT NULL,
-            to_e164 VARCHAR(32) NOT NULL,
-            message TEXT NOT NULL,
-            provider VARCHAR(32) DEFAULT 'mocean',
-            provider_msgid VARCHAR(128) NULL,
-            status VARCHAR(64) NULL,
-            http_code INT NULL,
-            provider_error VARCHAR(255) NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )");
-
-        if ($to_e164 && function_exists('send_sms')) {
-            $smsRes = send_sms($parent_mobile_raw, $msg);
-            $ok = $smsRes['ok'] ?? false;
-            $http = $smsRes['http'] ?? null;
-            $prov_status = $smsRes['provider_status'] ?? ($smsRes['status'] ?? null);
-            $prov_msgid = $smsRes['msgid'] ?? ($smsRes['message-id'] ?? null);
-            $prov_error = $smsRes['error'] ?? null;
-
-            $stmtL = $conn->prepare("INSERT INTO sms_logs (student_id,parent_id,to_e164,message,provider,provider_msgid,status,http_code,provider_error) VALUES (?,?,?,?,?,?,?,?,?)");
-            if ($stmtL) {
-                $prov = 'mocean';
-                $toLog = $smsRes['to'] ?? $to_e164;
-                $stmtL->bind_param("iissssiss", $student_id, $parent_id, $toLog, $msg, $prov, $prov_msgid, $prov_status, $http, $prov_error);
-                $stmtL->execute();
-                $stmtL->close();
-            }
-
-            $sms_meta = [
-                'sent' => $ok ? true : false,
-                'to'   => $smsRes['to'] ?? $to_e164,
-                'http' => $http,
-                'provider_status' => $prov_status,
-                'provider_msgid' => $prov_msgid,
-                'error' => $prov_error,
-            ];
-            $response['sms'] = $sms_meta;
         }
     }
 
     // ---------------------------
-    // Insert behavior log for ALL actions (including 'im_back'), no attendance or SMS
+    // Insert behavior log for ALL actions (excluding attendance)
     // ---------------------------
     if ($t !== 'attendance') {
         $stmt = $conn->prepare("INSERT INTO behavior_logs (student_id, action_type, timestamp) VALUES (?, ?, ?)");
