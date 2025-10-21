@@ -100,6 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
 
 /**
  * Import handling (kept same as previous, requiring source_subject_id + source_advisory_id)
+ * NOTE: created_at removed — use only the 4-column INSERT to match your production schema.
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     $source_subject_id = intval($_POST['source_subject_id'] ?? 0);
@@ -174,18 +175,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         $checkEnroll = $conn->prepare("SELECT 1 FROM student_enrollments WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ? LIMIT 1");
         if (!$checkEnroll) throw new Exception("prepare(checkEnroll) failed: " . $conn->error);
 
-        // Prepare insert for student_enrollments.
-        // Support both schemas: with and without `created_at`.
-        $hasCreatedAtRes = $conn->query("SHOW COLUMNS FROM student_enrollments LIKE 'created_at'");
-        if ($hasCreatedAtRes && $hasCreatedAtRes->num_rows > 0) {
-            // Table has created_at — include it (use timestamp)
-            $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id, created_at) VALUES (?, ?, ?, ?, ?)");
-            if (!$insertEnroll) throw new Exception("prepare(insertEnroll-with-created_at) failed: " . $conn->error);
-        } else {
-            // No created_at — use simpler insert
-            $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id) VALUES (?, ?, ?, ?)");
-            if (!$insertEnroll) throw new Exception("prepare(insertEnroll) failed: " . $conn->error);
-        }
+        // Prepare insert for student_enrollments (4 columns only)
+        $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id) VALUES (?, ?, ?, ?)");
+        if (!$insertEnroll) throw new Exception("prepare(insertEnroll) failed: " . $conn->error);
 
         $imported = 0; $skipped = 0;
 
@@ -204,17 +196,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
             }
             $checkEnroll->free_result();
 
-            // Bind depending on whether created_at column is present in the prepared statement
-            $paramCount = $insertEnroll->param_count;
-            if ($paramCount === 5) {
-                // (student_id, subject_id, advisory_id, school_year_id, created_at)
-                $createdAtVal = date('Y-m-d H:i:s');
-                $insertEnroll->bind_param("iiiss", $student_id, $target_subject_id, $advisory_id, $school_year_id, $createdAtVal);
-            } else {
-                // original 4-param insert
-                $insertEnroll->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id);
-            }
-
+            $insertEnroll->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id);
             if (!$insertEnroll->execute()) {
                 throw new Exception("execute(insertEnroll) failed for student {$student_id}: " . $insertEnroll->error);
             }
