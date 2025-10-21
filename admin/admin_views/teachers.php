@@ -138,8 +138,9 @@ while ($row = $res->fetch_assoc()) {
           <div><strong><?= htmlspecialchars($row['requester']) ?></strong> → <?= $row['class_name'] ?> (<?= $row['year_label'] ?>)</div>
           <div class="text-gray-500 italic"><?= htmlspecialchars($row['reason']) ?></div>
           <div class="mt-1 space-x-2">
-            <a href="approve_request.php?id=<?= $row['request_id'] ?>&action=approve" class="text-green-600 font-bold">✅ Approve</a>
-            <a href="approve_request.php?id=<?= $row['request_id'] ?>&action=deny" class="text-red-600 font-bold">❌ Deny</a>
+           <a href="approve_request.php?id=<?= $row['request_id'] ?>&action=approve" class="text-green-600 font-bold">✅ Approve</a>
+            <a href="approve_request.php?id=<?= $row['request_id'] ?>&action=deny"    class="text-red-600 font-bold">❌ Deny</a>
+
           </div>
         </div>
       <?php endwhile;
@@ -175,10 +176,21 @@ while ($row = $res->fetch_assoc()) {
   <div class="toast"><?= $toast ?></div>
 <?php endif; ?>
 
-<div class="mb-4">
-  <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-    ➕ Add Teacher
-  </button>
+<div class="mb-4 flex items-center justify-between">
+  <div>
+    <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+      ➕ Add Teacher
+    </button>
+  </div>
+
+  <!-- Full Name search (search-only) -->
+  <div class="w-1/3">
+    <label class="block text-sm text-gray-600 mb-1">Search by Full Name</label>
+    <input id="filter_q" type="search" placeholder="Type full name (realtime)..." class="w-full border p-2 rounded" oninput="filterRows()">
+    <div class="mt-2 text-right">
+      <button class="text-sm text-gray-600 underline" onclick="clearSearch()">Clear search</button>
+    </div>
+  </div>
 </div>
 
 <table class="min-w-full bg-white shadow rounded">
@@ -190,9 +202,10 @@ while ($row = $res->fetch_assoc()) {
       <th class="py-2 px-4 text-left">Actions</th>
     </tr>
   </thead>
-  <tbody>
+  <tbody id="teachers_tbody">
     <?php while($row = $teachers->fetch_assoc()): ?>
-      <tr class="border-t">
+      <tr class="border-t teacher-row"
+          data-fullname="<?= htmlspecialchars($row['fullname'], ENT_QUOTES) ?>">
         <td class="py-2 px-4"><?= htmlspecialchars($row['fullname']) ?></td>
         <td class="py-2 px-4"><?= htmlspecialchars($row['username']) ?></td>
           <td class="py-2 px-4">
@@ -338,4 +351,41 @@ while ($row = $res->fetch_assoc()) {
       document.getElementById('dropdownPanel')?.classList.add('hidden');
     }
   });
+
+  // Realtime Full Name search
+  const teachersTbody = document.getElementById('teachers_tbody');
+  const filterQ = document.getElementById('filter_q');
+
+  function clearSearch() {
+    filterQ.value = '';
+    filterRows();
+  }
+
+  function filterRows() {
+    const q = (filterQ.value || '').trim().toLowerCase();
+    const rows = teachersTbody.querySelectorAll('.teacher-row');
+    let anyVisible = false;
+    rows.forEach(row => {
+      const fullname = (row.getAttribute('data-fullname') || '').toLowerCase();
+      const visible = q === '' || fullname.indexOf(q) !== -1;
+      row.style.display = visible ? '' : 'none';
+      if (visible) anyVisible = true;
+    });
+
+    // Optional: show a "no results" row when nothing matches
+    let noRow = document.getElementById('no_results_row');
+    if (!anyVisible) {
+      if (!noRow) {
+        noRow = document.createElement('tr');
+        noRow.id = 'no_results_row';
+        noRow.innerHTML = '<td class="py-6 px-3 text-center text-gray-500 italic" colspan="4">No teachers found.</td>';
+        teachersTbody.appendChild(noRow);
+      }
+    } else {
+      if (noRow) noRow.remove();
+    }
+  }
+
+  // initial run
+  filterRows();
 </script>
