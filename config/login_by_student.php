@@ -70,6 +70,15 @@ setcookie(session_name(), session_id(), [
   'samesite' => 'Lax',
 ]);
 
+// Optional: Auto-attendance logic (disabled for face login)
+// You can re-enable for other login methods by removing the comment or skip flag.
+if (empty($_POST['skip_attendance'])) {
+    // Example placeholder — disabled by default.
+    // require_once __DIR__ . '/save_attendance.php';
+    // save_attendance($_SESSION['student_id']);
+}
+
+// Return JSON response
 session_write_close();
 echo json_encode([
   'success'     => true,

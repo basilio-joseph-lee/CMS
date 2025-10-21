@@ -276,7 +276,7 @@ async function scanLoop(){
   clearInterval(scanTimer);
 
   try{
-    const body = new URLSearchParams({ student_id: String(meta.id) });
+    const body = new URLSearchParams({ student_id: String(meta.id), skip_attendance: '1' });
     const res  = await fetch(LOGIN_URL, {
       method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body
     }).then(r=>r.json());
