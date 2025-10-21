@@ -2,13 +2,13 @@
 // --- Handle Toast Logic & Actions ---
 
 include("../config/db.php");
-
+require_once __DIR__ . '/../../vendor/autoload.php';
+use PhpOffice\PhpSpreadsheet\IOFactory;
 $toast = '';
 if (isset($_GET['success'])) {
   if ($_GET['success'] === 'add') $toast = 'Parent added successfully!';
   elseif ($_GET['success'] === 'update') $toast = 'Parent updated successfully!';
   elseif ($_GET['success'] === 'delete') $toast = 'Parent deleted successfully!';
-  elseif ($_GET['success'] === 'import') $toast = 'Parents imported successfully!';
 }
 
 function redirect_with_toast($type) {
@@ -16,11 +16,7 @@ function redirect_with_toast($type) {
   exit;
 }
 
-// ------------------- Handle CRUD -------------------
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-  // Create Parent
   if (isset($_POST['create_parent'])) {
     $stmt = $conn->prepare("INSERT INTO parents (fullname, email, password, mobile_number) VALUES (?, ?, ?, ?)");
     $stmt->bind_param("ssss", $_POST['fullname'], $_POST['email'], password_hash($_POST['password'], PASSWORD_DEFAULT), $_POST['mobile_number']);
@@ -28,7 +24,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect_with_toast('add');
   }
 
-  // Update Parent
   if (isset($_POST['update_parent'])) {
     if (!empty($_POST['password'])) {
       $stmt = $conn->prepare("UPDATE parents SET fullname = ?, email = ?, password = ?, mobile_number = ? WHERE parent_id = ?");
@@ -42,57 +37,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect_with_toast('update');
   }
 
-  // Delete Parent
   if (isset($_POST['delete_parent'])) {
     $stmt = $conn->prepare("DELETE FROM parents WHERE parent_id = ?");
     $stmt->bind_param("i", $_POST['parent_id']);
     $stmt->execute(); $stmt->close();
     redirect_with_toast('delete');
   }
-
-  // Import Parents from CSV
-  if (isset($_POST['import_parents']) && isset($_FILES['parents_file'])) {
-    $fileTmpPath = $_FILES['parents_file']['tmp_name'];
-    $fileName = $_FILES['parents_file']['name'];
-    $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-
-    try {
-      if ($fileExt === 'csv') {
-        $file = fopen($fileTmpPath, 'r');
-        $firstRow = true;
-        while (($row = fgetcsv($file, 1000, ",")) !== FALSE) {
-          if ($firstRow) { $firstRow = false; continue; } // skip header
-          $fullname = $row[0];
-          $email = $row[1];
-          $mobile = $row[2];
-          $password = password_hash($row[3], PASSWORD_DEFAULT);
-          $stmt = $conn->prepare("INSERT INTO parents (fullname, email, password, mobile_number) VALUES (?, ?, ?, ?)");
-          $stmt->bind_param("ssss", $fullname, $email, $password, $mobile);
-          $stmt->execute();
-          $stmt->close();
-        }
-        fclose($file);
-      } else {
-        throw new Exception("Only CSV files are supported.");
-      }
-      redirect_with_toast('import');
-    } catch (Exception $e) {
-      echo "<script>alert('Error importing file: ".$e->getMessage()."');</script>";
-    }
-  }
 }
 
-// ------------------- Fetch Parents -------------------
+// ---------- Import Parents from File ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_parents'])) {
+  if (!isset($_FILES['parents_file']) || $_FILES['parents_file']['error'] !== UPLOAD_ERR_OK) {
+      echo "<script>alert('File upload failed.');</script>";
+      exit;
+  }
+
+  $tmp  = $_FILES['parents_file']['tmp_name'];
+  $ext  = strtolower(pathinfo($_FILES['parents_file']['name'], PATHINFO_EXTENSION));
+  $rows = [];
+
+  try {
+      if ($ext === 'csv') {
+          if (($handle = fopen($tmp, 'r')) !== false) {
+              while (($data = fgetcsv($handle, 1000, ',')) !== false) $rows[] = $data;
+              fclose($handle);
+          }
+      } elseif (in_array($ext, ['xls', 'xlsx'])) {
+          $spreadsheet = IOFactory::load($tmp);
+          $worksheet = $spreadsheet->getActiveSheet();
+          $rows = $worksheet->toArray();
+      } else {
+          echo "<script>alert('Unsupported file type. Please upload CSV or XLSX.');</script>";
+          exit;
+      }
+  } catch (Throwable $e) {
+      echo "<script>alert('Failed to read Excel file: " . addslashes($e->getMessage()) . "');</script>";
+      exit;
+  }
+
+  // Expected headers: Fullname | Email | Mobile | Password
+  $inserted = 0; $skipped = 0;
+  foreach ($rows as $i => $r) {
+      if ($i === 0) continue; // skip header
+      $fullname = trim($r[0] ?? '');
+      $email    = trim($r[1] ?? '');
+      $mobile   = trim($r[2] ?? '');
+      $password = trim($r[3] ?? '');
+
+      if ($fullname === '' || $email === '' || $mobile === '' || $password === '') continue;
+
+      // Skip duplicates (by email or mobile)
+      $stmt = $conn->prepare("SELECT 1 FROM parents WHERE email=? OR mobile_number=? LIMIT 1");
+      $stmt->bind_param('ss', $email, $mobile);
+      $stmt->execute();
+      $stmt->store_result();
+      if ($stmt->num_rows > 0) { $skipped++; $stmt->close(); continue; }
+      $stmt->close();
+
+      $hashed = password_hash($password, PASSWORD_DEFAULT);
+      $stmt = $conn->prepare("INSERT INTO parents (fullname, email, password, mobile_number) VALUES (?, ?, ?, ?)");
+      $stmt->bind_param('ssss', $fullname, $email, $hashed, $mobile);
+      $stmt->execute(); $stmt->close();
+      $inserted++;
+  }
+
+  echo "<script>alert('Imported {$inserted} parents. Skipped {$skipped}.');location.href='admin.php?page=parents';</script>";
+  exit;
+}
+
+
 $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
 ?>
 
 <style>
   .modal-backdrop { backdrop-filter: blur(5px); }
   .fade-in { animation: fadeIn 1s ease-out; }
-  @keyframes fadeIn { from { opacity:0; transform:scale(0.95); } to { opacity:1; transform:scale(1); } }
-  .toast { position: fixed; top:1.5rem; right:1.5rem; background-color:#38bdf8; color:white; padding:1rem 1.5rem; border-radius:0.5rem; box-shadow:0 5px 15px rgba(0,0,0,0.2); z-index:9999; animation: slideDown 0.5s ease, fadeOut 0.5s ease 2.5s forwards; }
-  @keyframes slideDown { from { opacity:0; transform: translateY(-20px); } to { opacity:1; transform: translateY(0); } }
-  @keyframes fadeOut { to { opacity:0; transform: translateY(-20px); } }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .toast {
+    position: fixed; top: 1.5rem; right: 1.5rem; background-color: #38bdf8;
+    color: white; padding: 1rem 1.5rem; border-radius: 0.5rem;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2); z-index: 9999;
+    animation: slideDown 0.5s ease, fadeOut 0.5s ease 2.5s forwards;
+  }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeOut {
+    to { opacity: 0; transform: translateY(-20px); }
+  }
 </style>
 
 <?php if ($toast): ?>
@@ -100,11 +136,17 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
 <?php endif; ?>
 
 <div class="mb-4 flex items-center justify-between">
-  <div class="flex space-x-2">
-    <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">➕ Add Parent</button>
-    <button onclick="document.getElementById('importModal').classList.remove('hidden')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">📁 Import Parents</button>
+  <div>
+    <button onclick="document.getElementById('importModal').classList.remove('hidden')" 
+        class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
+  📂 Import File
+</button>
+    <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+      ➕ Add Parent
+    </button>
   </div>
 
+  <!-- Full Name search (search-only) -->
   <div class="w-1/3">
     <label class="block text-sm text-gray-600 mb-1">Search by Full Name</label>
     <input id="filter_q" type="search" placeholder="Type full name (realtime)..." class="w-full border p-2 rounded" oninput="filterRows()">
@@ -125,7 +167,8 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
   </thead>
   <tbody id="parents_tbody">
     <?php while($row = $parents->fetch_assoc()): ?>
-      <tr class="border-t parent-row" data-fullname="<?= htmlspecialchars($row['fullname'], ENT_QUOTES) ?>">
+      <tr class="border-t parent-row"
+          data-fullname="<?= htmlspecialchars($row['fullname'], ENT_QUOTES) ?>">
         <td class="py-2 px-4"><?= htmlspecialchars($row['fullname']) ?></td>
         <td class="py-2 px-4"><?= htmlspecialchars($row['email']) ?></td>
         <td class="py-2 px-4"><?= htmlspecialchars($row['mobile_number']) ?></td>
@@ -142,10 +185,22 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
           <form method="POST">
             <input type="hidden" name="update_parent" value="1">
             <input type="hidden" name="parent_id" value="<?= $row['parent_id'] ?>">
-            <div class="mb-3"><label>Full Name</label><input type="text" name="fullname" value="<?= htmlspecialchars($row['fullname']) ?>" class="w-full border p-2 rounded" required></div>
-            <div class="mb-3"><label>Email</label><input type="email" name="email" value="<?= htmlspecialchars($row['email']) ?>" class="w-full border p-2 rounded" required></div>
-            <div class="mb-3"><label>Mobile Number</label><input type="text" name="mobile_number" value="<?= htmlspecialchars($row['mobile_number']) ?>" class="w-full border p-2 rounded" required></div>
-            <div class="mb-3"><label>New Password <span class="text-sm text-gray-500">(leave blank to keep current)</span></label><input type="password" name="password" class="w-full border p-2 rounded"></div>
+            <div class="mb-3">
+              <label>Full Name</label>
+              <input type="text" name="fullname" value="<?= htmlspecialchars($row['fullname']) ?>" class="w-full border p-2 rounded" required>
+            </div>
+            <div class="mb-3">
+              <label>Email</label>
+              <input type="email" name="email" value="<?= htmlspecialchars($row['email']) ?>" class="w-full border p-2 rounded" required>
+            </div>
+            <div class="mb-3">
+              <label>Mobile Number</label>
+              <input type="text" name="mobile_number" value="<?= htmlspecialchars($row['mobile_number']) ?>" class="w-full border p-2 rounded" required>
+            </div>
+            <div class="mb-3">
+              <label>New Password <span class="text-sm text-gray-500">(leave blank to keep current)</span></label>
+              <input type="password" name="password" class="w-full border p-2 rounded">
+            </div>
             <button type="submit" class="bg-yellow-500 text-white px-4 py-2 rounded">Update</button>
             <button type="button" onclick="document.getElementById('editModal<?= $row['parent_id'] ?>').classList.add('hidden')" class="ml-2 text-gray-600">Cancel</button>
           </form>
@@ -165,6 +220,7 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
           </form>
         </div>
       </div>
+
     <?php endwhile; ?>
   </tbody>
 </table>
@@ -175,62 +231,82 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
     <h3 class="text-xl font-bold mb-4">Add New Parent</h3>
     <form method="POST">
       <input type="hidden" name="create_parent" value="1">
-      <div class="mb-3"><label>Full Name</label><input type="text" name="fullname" class="w-full border p-2 rounded" required></div>
-      <div class="mb-3"><label>Email</label><input type="email" name="email" class="w-full border p-2 rounded" required></div>
-      <div class="mb-3"><label>Mobile Number</label><input type="text" name="mobile_number" class="w-full border p-2 rounded" required></div>
-      <div class="mb-3"><label>Password</label><input type="password" name="password" class="w-full border p-2 rounded" required></div>
+      <div class="mb-3">
+        <label>Full Name</label>
+        <input type="text" name="fullname" class="w-full border p-2 rounded" required>
+      </div>
+      <div class="mb-3">
+        <label>Email</label>
+        <input type="email" name="email" class="w-full border p-2 rounded" required>
+      </div>
+      <div class="mb-3">
+        <label>Mobile Number</label>
+        <input type="text" name="mobile_number" class="w-full border p-2 rounded" required>
+      </div>
+      <div class="mb-3">
+        <label>Password</label>
+        <input type="password" name="password" class="w-full border p-2 rounded" required>
+      </div>
       <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Save</button>
       <button type="button" onclick="document.getElementById('addModal').classList.add('hidden')" class="ml-2 text-gray-600">Cancel</button>
     </form>
   </div>
 </div>
-
 <!-- Import Modal -->
 <div id="importModal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center hidden z-50">
   <div class="bg-white p-6 rounded shadow max-w-md w-full fade-in">
-    <h3 class="text-xl font-bold mb-4">Import Parents from CSV</h3>
+    <h3 class="text-xl font-bold mb-4">Import Parents from File</h3>
     <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="import_parents" value="1">
       <div class="mb-3">
-        <label>Select CSV file</label>
-        <input type="file" name="parents_file" accept=".csv" class="w-full border p-2 rounded" required>
+        <label class="block text-sm font-semibold">Select CSV/XLSX File</label>
+        <input type="file" name="parents_file" accept=".csv,.xls,.xlsx" required class="w-full border p-2 rounded">
       </div>
-      <button type="submit" name="import_parents" class="bg-green-600 text-white px-4 py-2 rounded">Import</button>
-      <button type="button" onclick="document.getElementById('importModal').classList.add('hidden')" class="ml-2 text-gray-600">Cancel</button>
+      <p class="text-sm text-gray-500 mt-1">Columns should be: <strong>Fullname, Email, Mobile, Password</strong></p>
+      <div class="mt-4 flex justify-end gap-2">
+        <button type="button" onclick="document.getElementById('importModal').classList.add('hidden')" class="text-gray-600">Cancel</button>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Upload & Import</button>
+      </div>
     </form>
   </div>
 </div>
 
+
 <script>
-const parentsTbody = document.getElementById('parents_tbody');
-const filterQ = document.getElementById('filter_q');
+  // Realtime Full Name search for Parents
+  const parentsTbody = document.getElementById('parents_tbody');
+  const filterQ = document.getElementById('filter_q');
 
-function clearSearch() {
-  filterQ.value = '';
-  filterRows();
-}
-
-function filterRows() {
-  const q = (filterQ.value || '').trim().toLowerCase();
-  const rows = parentsTbody.querySelectorAll('.parent-row');
-  let anyVisible = false;
-  rows.forEach(row => {
-    const fullname = (row.getAttribute('data-fullname') || '').toLowerCase();
-    const visible = q === '' || fullname.indexOf(q) !== -1;
-    row.style.display = visible ? '' : 'none';
-    if (visible) anyVisible = true;
-  });
-  let noRow = document.getElementById('no_results_row_parents');
-  if (!anyVisible) {
-    if (!noRow) {
-      noRow = document.createElement('tr');
-      noRow.id = 'no_results_row_parents';
-      noRow.innerHTML = '<td class="py-6 px-3 text-center text-gray-500 italic" colspan="4">No parents found.</td>';
-      parentsTbody.appendChild(noRow);
-    }
-  } else if (noRow) {
-    noRow.remove();
+  function clearSearch() {
+    filterQ.value = '';
+    filterRows();
   }
-}
 
-filterRows();
+  function filterRows() {
+    const q = (filterQ.value || '').trim().toLowerCase();
+    const rows = parentsTbody.querySelectorAll('.parent-row');
+    let anyVisible = false;
+    rows.forEach(row => {
+      const fullname = (row.getAttribute('data-fullname') || '').toLowerCase();
+      const visible = q === '' || fullname.indexOf(q) !== -1;
+      row.style.display = visible ? '' : 'none';
+      if (visible) anyVisible = true;
+    });
+
+    // Optional: show a "no results" row when nothing matches
+    let noRow = document.getElementById('no_results_row_parents');
+    if (!anyVisible) {
+      if (!noRow) {
+        noRow = document.createElement('tr');
+        noRow.id = 'no_results_row_parents';
+        noRow.innerHTML = '<td class="py-6 px-3 text-center text-gray-500 italic" colspan="4">No parents found.</td>';
+        parentsTbody.appendChild(noRow);
+      }
+    } else {
+      if (noRow) noRow.remove();
+    }
+  }
+
+  // initial run
+  filterRows();
 </script>
