@@ -5,10 +5,12 @@
  * Shows subjects for the active school year.
  * On click, stores selection in session and (for students) auto-logs attendance.
  *
- * Fixes included:
+ * Notes:
  * - Student listing is driven by student_enrollments so ALL enrolled classes show.
  * - Handles section-only enrollments (NULL subject_id) by listing all subjects in that advisory.
- * - Clears/sets session safely and redirects by role.
+ * - Final GROUP BY prevents hidden duplicates when a subject appears via both branches.
+ * - Filters enrollments to status='enrolled' (fallback to 'enrolled' when NULL).
+ * - Redirect paths are relative so it works on localhost/CMS and on production domain.
  */
 
 session_start();
@@ -33,84 +35,84 @@ if (
     $_SESSION['school_year_id'] = (int)$_GET['school_year_id'];
 
     // ---------------- Auto-attendance for students ----------------
-    if (isset($_SESSION['student_id'])) {
-        $studentId  = (int)$_SESSION['student_id'];
-        $advisoryId = (int)$_SESSION['advisory_id'];
-        $subjectId  = (int)$_SESSION['subject_id'];
-        $syId       = (int)$_SESSION['school_year_id'];
+    // if (isset($_SESSION['student_id'])) {
+    //     $studentId  = (int)$_SESSION['student_id'];
+    //     $advisoryId = (int)$_SESSION['advisory_id'];
+    //     $subjectId  = (int)$_SESSION['subject_id'];
+    //     $syId       = (int)$_SESSION['school_year_id'];
 
-        $now   = new DateTime('now');
-        $today = $now->format('Y-m-d');
-        $dow   = (int)$now->format('N'); // 1..7
+    //     $now   = new DateTime('now');
+    //     $today = $now->format('Y-m-d');
+    //     $dow   = (int)$now->format('N'); // 1..7
 
-        // Prevent duplicate attendance for the same date
-        $dupe = $conn->prepare("
-            SELECT 1
-            FROM attendance_records
-            WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=?
-              AND DATE(`timestamp`) = CURDATE()
-            LIMIT 1
-        ");
-        $dupe->bind_param("iiii", $studentId, $subjectId, $advisoryId, $syId);
-        $dupe->execute();
-        $already = $dupe->get_result()->num_rows > 0;
-        $dupe->close();
+    //     // Prevent duplicate attendance for the same date
+    //     $dupe = $conn->prepare("
+    //         SELECT 1
+    //         FROM attendance_records
+    //         WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=?
+    //           AND DATE(`timestamp`) = CURDATE()
+    //         LIMIT 1
+    //     ");
+    //     $dupe->bind_param("iiii", $studentId, $subjectId, $advisoryId, $syId);
+    //     $dupe->execute();
+    //     $already = $dupe->get_result()->num_rows > 0;
+    //     $dupe->close();
 
-        if (!$already) {
-            // Find today's block
-            $stmt = $conn->prepare("
-                SELECT start_time, end_time
-                FROM schedule_timeblocks
-                WHERE school_year_id=? AND advisory_id=? AND subject_id=?
-                  AND day_of_week=? AND active_flag=1
-                ORDER BY start_time ASC
-                LIMIT 1
-            ");
-            $stmt->bind_param("iiii", $syId, $advisoryId, $subjectId, $dow);
-            $stmt->execute();
-            $blk = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
+    //     if (!$already) {
+    //         // Find today's block
+    //         $stmt = $conn->prepare("
+    //             SELECT start_time, end_time
+    //             FROM schedule_timeblocks
+    //             WHERE school_year_id=? AND advisory_id=? AND subject_id=?
+    //               AND day_of_week=? AND active_flag=1
+    //             ORDER BY start_time ASC
+    //             LIMIT 1
+    //         ");
+    //         $stmt->bind_param("iiii", $syId, $advisoryId, $subjectId, $dow);
+    //         $stmt->execute();
+    //         $blk = $stmt->get_result()->fetch_assoc();
+    //         $stmt->close();
 
-            if ($blk) {
-                $startTs = DateTime::createFromFormat('Y-m-d H:i:s', $today.' '.$blk['start_time']);
-                $endTs   = DateTime::createFromFormat('Y-m-d H:i:s', $today.' '.$blk['end_time']);
+    //         if ($blk) {
+    //             $startTs = DateTime::createFromFormat('Y-m-d H:i:s', $today.' '.$blk['start_time']);
+    //             $endTs   = DateTime::createFromFormat('Y-m-d H:i:s', $today.' '.$blk['end_time']);
 
-                $LATE_GRACE_MIN  = 5;   // <=5 mins late == Present
-                $ABSENT_IF_AFTER = true;
+    //             $LATE_GRACE_MIN  = 5;   // <=5 mins late == Present
+    //             $ABSENT_IF_AFTER = true;
 
-                $status = null;
-                if ($now >= $startTs && $now <= $endTs) {
-                    $diffMin = (int)floor(($now->getTimestamp() - $startTs->getTimestamp()) / 60);
-                    $status  = ($diffMin <= $LATE_GRACE_MIN) ? 'Present' : 'Late';
-                } elseif ($ABSENT_IF_AFTER && $now > $endTs) {
-                    $status = 'Absent';
-                }
+    //             $status = null;
+    //             if ($now >= $startTs && $now <= $endTs) {
+    //                 $diffMin = (int)floor(($now->getTimestamp() - $startTs->getTimestamp()) / 60);
+    //                 $status  = ($diffMin <= $LATE_GRACE_MIN) ? 'Present' : 'Late';
+    //             } elseif ($ABSENT_IF_AFTER && $now > $endTs) {
+    //                 $status = 'Absent';
+    //             }
 
-                if ($status) {
-                    // Insert only if still no record for today
-                    $ins = $conn->prepare("
-                        INSERT INTO attendance_records
-                            (student_id, subject_id, advisory_id, school_year_id, status, `timestamp`)
-                        SELECT ?, ?, ?, ?, ?, NOW()
-                        FROM DUAL
-                        WHERE NOT EXISTS (
-                            SELECT 1
-                            FROM attendance_records
-                            WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=?
-                              AND DATE(`timestamp`) = CURDATE()
-                        )
-                    ");
-                    $ins->bind_param(
-                        'iiiisiiii',
-                        $studentId, $subjectId, $advisoryId, $syId, $status,
-                        $studentId, $subjectId, $advisoryId, $syId
-                    );
-                    $ins->execute();
-                    $ins->close();
-                }
-            }
-        }
-    }
+    //             if ($status) {
+    //                 // Insert only if still no record for today
+    //                 $ins = $conn->prepare("
+    //                     INSERT INTO attendance_records
+    //                         (student_id, subject_id, advisory_id, school_year_id, status, `timestamp`)
+    //                     SELECT ?, ?, ?, ?, ?, NOW()
+    //                     FROM DUAL
+    //                     WHERE NOT EXISTS (
+    //                         SELECT 1
+    //                         FROM attendance_records
+    //                         WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=?
+    //                           AND DATE(`timestamp`) = CURDATE()
+    //                     )
+    //                 ");
+    //                 $ins->bind_param(
+    //                     'iiiisiiii',
+    //                     $studentId, $subjectId, $advisoryId, $syId, $status,
+    //                     $studentId, $subjectId, $advisoryId, $syId
+    //                 );
+    //                 $ins->execute();
+    //                 $ins->close();
+    //             }
+    //         }
+    //     }
+    // }
 
     // Redirect by role
     if (isset($_SESSION['teacher_id'])) {
@@ -169,58 +171,72 @@ if ($active_sy_id) {
         $stmt->close();
 
     } elseif (isset($_SESSION['student_id'])) {
-        // ---------- STUDENT: ALL enrollments for active SY ----------
-        // Covers:
-        //   A) per-subject enrollments (se.subject_id IS NOT NULL)
-        //   B) section-only enrollments (se.subject_id IS NULL) → list all subjects in that advisory
+        // ---------- STUDENT: ALL enrollments for active SY (deduped by subject) ----------
+        // Handles:
+        //   A) per-subject enrollments
+        //   B) section-only enrollments -> expand to all subjects in advisory
+        // Then GROUP BY subject to avoid hidden duplicates across branches.
         $studentId = (int)$_SESSION['student_id'];
 
         $sql = "
-            /* A) Exact subject enrollments */
-            SELECT DISTINCT
-                s.subject_id,
-                s.subject_name,
-                se.advisory_id,
-                se.school_year_id,
-                ac.class_name,
-                sy.year_label
-            FROM student_enrollments se
-            JOIN subjects s
-              ON s.subject_id = se.subject_id
-             AND s.school_year_id = se.school_year_id
-            JOIN advisory_classes ac
-              ON ac.advisory_id = se.advisory_id
-             AND ac.school_year_id = se.school_year_id
-            JOIN school_years sy
-              ON sy.school_year_id = se.school_year_id
-            WHERE se.student_id = ?
-              AND se.school_year_id = ?
-              AND se.subject_id IS NOT NULL
+            SELECT
+                x.subject_id,
+                x.subject_name,
+                x.advisory_id,
+                x.school_year_id,
+                x.class_name,
+                x.year_label
+            FROM (
+                /* A) Per-subject enrollments */
+                SELECT
+                    s.subject_id,
+                    s.subject_name,
+                    se.advisory_id,
+                    se.school_year_id,
+                    ac.class_name,
+                    sy.year_label
+                FROM student_enrollments se
+                JOIN subjects s
+                  ON s.subject_id = se.subject_id
+                 AND s.school_year_id = se.school_year_id
+                JOIN advisory_classes ac
+                  ON ac.advisory_id = se.advisory_id
+                 AND ac.school_year_id = se.school_year_id
+                JOIN school_years sy
+                  ON sy.school_year_id = se.school_year_id
+                WHERE se.student_id = ?
+                  AND se.school_year_id = ?
+                  AND se.subject_id IS NOT NULL
+                  AND COALESCE(se.status,'enrolled') = 'enrolled'
 
-            UNION
+                UNION ALL
 
-            /* B) Section-only enrollments → include all subjects in that advisory */
-            SELECT DISTINCT
-                s2.subject_id,
-                s2.subject_name,
-                se2.advisory_id,
-                se2.school_year_id,
-                ac2.class_name,
-                sy2.year_label
-            FROM student_enrollments se2
-            JOIN advisory_classes ac2
-              ON ac2.advisory_id = se2.advisory_id
-             AND ac2.school_year_id = se2.school_year_id
-            JOIN school_years sy2
-              ON sy2.school_year_id = se2.school_year_id
-            JOIN subjects s2
-              ON s2.advisory_id = se2.advisory_id
-             AND s2.school_year_id = se2.school_year_id
-            WHERE se2.student_id = ?
-              AND se2.school_year_id = ?
-              AND se2.subject_id IS NULL
-
-            ORDER BY class_name ASC, subject_name ASC
+                /* B) Section-only enrollments -> list all subjects in that advisory */
+                SELECT
+                    s2.subject_id,
+                    s2.subject_name,
+                    se2.advisory_id,
+                    se2.school_year_id,
+                    ac2.class_name,
+                    sy2.year_label
+                FROM student_enrollments se2
+                JOIN advisory_classes ac2
+                  ON ac2.advisory_id = se2.advisory_id
+                 AND ac2.school_year_id = se2.school_year_id
+                JOIN school_years sy2
+                  ON sy2.school_year_id = se2.school_year_id
+                JOIN subjects s2
+                  ON s2.advisory_id = se2.advisory_id
+                 AND s2.school_year_id = se2.school_year_id
+                WHERE se2.student_id = ?
+                  AND se2.school_year_id = ?
+                  AND se2.subject_id IS NULL
+                  AND COALESCE(se2.status,'enrolled') = 'enrolled'
+            ) AS x
+            /* final dedupe: one row per subject (subject_id is unique within SY) */
+            GROUP BY
+                x.subject_id, x.subject_name, x.advisory_id, x.school_year_id, x.class_name, x.year_label
+            ORDER BY x.class_name ASC, x.subject_name ASC
         ";
 
         $stmt = $conn->prepare($sql);
