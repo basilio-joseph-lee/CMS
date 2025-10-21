@@ -50,12 +50,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
         ORDER BY ac.class_name ASC
     ");
     if (!$qry) {
-        echo json_encode(['status' => 'error', 'message' => 'DB prepare failed: ' . $conn->errno . ' - ' . $conn->error]);
+        echo json_encode(['status' => 'error', 'message' => 'DB prepare failed.']);
         exit;
     }
     $qry->bind_param("ii", $src_subject, $school_year_id);
     if (!$qry->execute()) {
-        echo json_encode(['status' => 'error', 'message' => 'DB execute failed: ' . $qry->errno . ' - ' . $qry->error]);
+        echo json_encode(['status' => 'error', 'message' => 'DB execute failed.']);
         exit;
     }
     $res = $qry->get_result();
@@ -100,8 +100,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
 
 /**
  * Import handling (kept same as previous, requiring source_subject_id + source_advisory_id)
- * This section is defensive: prepares both INSERT forms (with/without created_at),
- * logs detailed errors and retries automatically if an execute error indicates 'created_at' mismatch.
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     $source_subject_id = intval($_POST['source_subject_id'] ?? 0);
@@ -127,7 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
 
     $checkStmt = $conn->prepare("SELECT 1 FROM subjects WHERE subject_id = ? AND teacher_id = ? LIMIT 1"); // ADJUST IF NEEDED
     if (!$checkStmt) {
-        file_put_contents($logFile, date('c') . " - prepare(checkStmt) failed: {$conn->errno} - {$conn->error}" . PHP_EOL, FILE_APPEND);
+        file_put_contents($logFile, date('c') . " - prepare(checkStmt) failed: " . $conn->error . PHP_EOL, FILE_APPEND);
         $_SESSION['toast'] = "Import failed: internal error (see logs).";
         $_SESSION['toast_type'] = "error";
         header("Location: view_students.php");
@@ -135,7 +133,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     }
     $checkStmt->bind_param("ii", $source_subject_id, $teacher_id);
     if (!$checkStmt->execute()) {
-        file_put_contents($logFile, date('c') . " - execute(checkStmt) failed: {$checkStmt->errno} - {$checkStmt->error}" . PHP_EOL, FILE_APPEND);
+        file_put_contents($logFile, date('c') . " - execute(checkStmt) failed: " . $checkStmt->error . PHP_EOL, FILE_APPEND);
         $_SESSION['toast'] = "Import failed: internal error (see logs).";
         $_SESSION['toast_type'] = "error";
         header("Location: view_students.php");
@@ -154,7 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
     $checkStmt->close();
 
     $conn->begin_transaction();
-    $fetchSrc = $checkEnroll = $insertEnrollWithCreated = $insertEnrollNoCreated = null;
+    $fetchSrc = $checkEnroll = $insertEnroll = null;
     try {
         $fetchSrc = $conn->prepare("
             SELECT s.student_id
@@ -163,35 +161,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
             WHERE e.subject_id = ? AND e.advisory_id = ? AND e.school_year_id = ?
         ");
         if (!$fetchSrc) {
-            throw new Exception("prepare(fetchSrc) failed: {$conn->errno} - {$conn->error}");
+            throw new Exception("prepare(fetchSrc) failed: " . $conn->error);
         }
         $fetchSrc->bind_param("iii", $source_subject_id, $source_advisory_id, $school_year_id);
         if (!$fetchSrc->execute()) {
-            throw new Exception("execute(fetchSrc) failed: {$fetchSrc->errno} - {$fetchSrc->error}");
+            throw new Exception("execute(fetchSrc) failed: " . $fetchSrc->error);
         }
 
         $fetchSrc->store_result();
         $fetchSrc->bind_result($f_student_id);
 
         $checkEnroll = $conn->prepare("SELECT 1 FROM student_enrollments WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ? LIMIT 1");
-        if (!$checkEnroll) throw new Exception("prepare(checkEnroll) failed: {$conn->errno} - {$conn->error}");
+        if (!$checkEnroll) throw new Exception("prepare(checkEnroll) failed: " . $conn->error);
 
-        // Try to prepare both insert variants (with created_at and without)
-        $insertEnrollWithCreated = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id, created_at) VALUES (?, ?, ?, ?, ?)");
-        if (!$insertEnrollWithCreated) {
-            // log but continue; maybe table doesn't have created_at
-            file_put_contents($logFile, date('c') . " - prepare(insertEnrollWithCreated) failed (this may be fine): {$conn->errno} - {$conn->error}" . PHP_EOL, FILE_APPEND);
-            $insertEnrollWithCreated = null;
+        // Prepare insert for student_enrollments.
+        // Support both schemas: with and without `created_at`.
+        $hasCreatedAtRes = $conn->query("SHOW COLUMNS FROM student_enrollments LIKE 'created_at'");
+        if ($hasCreatedAtRes && $hasCreatedAtRes->num_rows > 0) {
+            // Table has created_at — include it (use timestamp)
+            $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id, created_at) VALUES (?, ?, ?, ?, ?)");
+            if (!$insertEnroll) throw new Exception("prepare(insertEnroll-with-created_at) failed: " . $conn->error);
+        } else {
+            // No created_at — use simpler insert
+            $insertEnroll = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id) VALUES (?, ?, ?, ?)");
+            if (!$insertEnroll) throw new Exception("prepare(insertEnroll) failed: " . $conn->error);
         }
-
-        $insertEnrollNoCreated = $conn->prepare("INSERT INTO student_enrollments (student_id, subject_id, advisory_id, school_year_id) VALUES (?, ?, ?, ?)");
-        if (!$insertEnrollNoCreated) {
-            // If this fails, we cannot proceed
-            throw new Exception("prepare(insertEnrollNoCreated) failed: {$conn->errno} - {$conn->error}");
-        }
-
-        // Decide default preference: use the 'withCreated' if it prepared successfully, otherwise use no-created.
-        $useWithCreatedByDefault = ($insertEnrollWithCreated !== null);
 
         $imported = 0; $skipped = 0;
 
@@ -200,7 +194,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
 
             $checkEnroll->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id);
             if (!$checkEnroll->execute()) {
-                throw new Exception("execute(checkEnroll) failed for student {$student_id}: {$checkEnroll->errno} - {$checkEnroll->error}");
+                throw new Exception("execute(checkEnroll) failed for student {$student_id}: " . $checkEnroll->error);
             }
             $checkEnroll->store_result();
             if ($checkEnroll->num_rows > 0) {
@@ -210,61 +204,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
             }
             $checkEnroll->free_result();
 
-            // Try the preferred prepared statement, but if it fails and the error mentions created_at,
-            // retry the alternate version and log details.
-            $executed = false;
-            $lastErr = null;
-
-            // First attempt
-            if ($useWithCreatedByDefault && $insertEnrollWithCreated) {
+            // Bind depending on whether created_at column is present in the prepared statement
+            $paramCount = $insertEnroll->param_count;
+            if ($paramCount === 5) {
+                // (student_id, subject_id, advisory_id, school_year_id, created_at)
                 $createdAtVal = date('Y-m-d H:i:s');
-                if (!$insertEnrollWithCreated->bind_param("iiiss", $student_id, $target_subject_id, $advisory_id, $school_year_id, $createdAtVal)) {
-                    // binding failed unexpectedly (log and attempt no-created)
-                    $lastErr = "bind_param failed (withCreated) for student {$student_id}";
-                    file_put_contents($logFile, date('c') . " - " . $lastErr . PHP_EOL, FILE_APPEND);
-                } else {
-                    if (!$insertEnrollWithCreated->execute()) {
-                        $lastErr = "execute(insertEnrollWithCreated) failed for student {$student_id}: {$insertEnrollWithCreated->errno} - {$insertEnrollWithCreated->error}";
-                        file_put_contents($logFile, date('c') . " - " . $lastErr . PHP_EOL, FILE_APPEND);
-                        // if error mentions created_at, we'll try fallback
-                        if (stripos($insertEnrollWithCreated->error, 'created_at') !== false || stripos($insertEnrollWithCreated->error, 'Unknown column') !== false) {
-                            // attempt alternate below
-                        } else {
-                            // other error: rethrow
-                            throw new Exception($lastErr);
-                        }
-                    } else {
-                        $executed = true;
-                    }
-                }
+                $insertEnroll->bind_param("iiiss", $student_id, $target_subject_id, $advisory_id, $school_year_id, $createdAtVal);
+            } else {
+                // original 4-param insert
+                $insertEnroll->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id);
             }
 
-            // Fallback attempt (or first attempt if default was no-created)
-            if (!$executed) {
-                // Attempt no-created insert
-                if (!$insertEnrollNoCreated->bind_param("iiii", $student_id, $target_subject_id, $advisory_id, $school_year_id)) {
-                    $lastErr = "bind_param failed (noCreated) for student {$student_id}";
-                    file_put_contents($logFile, date('c') . " - " . $lastErr . PHP_EOL, FILE_APPEND);
-                    throw new Exception($lastErr);
-                }
-                if (!$insertEnrollNoCreated->execute()) {
-                    $lastErr = "execute(insertEnrollNoCreated) failed for student {$student_id}: {$insertEnrollNoCreated->errno} - {$insertEnrollNoCreated->error}";
-                    file_put_contents($logFile, date('c') . " - " . $lastErr . PHP_EOL, FILE_APPEND);
-                    // This is fatal for this import: rethrow to rollback and surface to logs
-                    throw new Exception($lastErr);
-                } else {
-                    $executed = true;
-                }
+            if (!$insertEnroll->execute()) {
+                throw new Exception("execute(insertEnroll) failed for student {$student_id}: " . $insertEnroll->error);
             }
-
-            if ($executed) $imported++;
+            $imported++;
         }
 
         $fetchSrc->free_result();
         $fetchSrc->close();
         $checkEnroll->close();
-        if ($insertEnrollWithCreated) $insertEnrollWithCreated->close();
-        if ($insertEnrollNoCreated) $insertEnrollNoCreated->close();
+        $insertEnroll->close();
 
         $conn->commit();
         $_SESSION['toast'] = "Imported {$imported} students. Skipped {$skipped}.";
@@ -280,18 +240,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
             @ $checkEnroll->free_result();
             @ $checkEnroll->close();
         }
-        if ($insertEnrollWithCreated !== null) {
-            @ $insertEnrollWithCreated->close();
-        }
-        if ($insertEnrollNoCreated !== null) {
-            @ $insertEnrollNoCreated->close();
+        if ($insertEnroll !== null) {
+            @ $insertEnroll->close();
         }
 
         $conn->rollback();
         file_put_contents($logFile, date('c') . " - Import exception: " . $e->getMessage() . PHP_EOL, FILE_APPEND);
-        // Add extra diagnostic info (dump last few DB errors)
-        file_put_contents($logFile, date('c') . " - DB errno: {$conn->errno} - {$conn->error}" . PHP_EOL, FILE_APPEND);
-
         $_SESSION['toast'] = "Import failed: DB error (see server logs).";
         $_SESSION['toast_type'] = "error";
         header("Location: view_students.php");
@@ -392,13 +346,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $upd->bind_param("ssi", $destRel, $descriptor_json_string, $student_id);
                     if (!$upd->execute()) {
                         // DB write failed, log
-                        file_put_contents($logFile, date('c') . " - descriptor DB write failed: " . $upd->errno . " - " . $upd->error . PHP_EOL, FILE_APPEND);
+                        file_put_contents($logFile, date('c') . " - descriptor DB write failed: " . $upd->error . PHP_EOL, FILE_APPEND);
                     } else {
                         $descriptorSavedToDB = true;
                     }
                     $upd->close();
-                } else {
-                    file_put_contents($logFile, date('c') . " - prepare(update descriptor) failed: {$conn->errno} - {$conn->error}" . PHP_EOL, FILE_APPEND);
                 }
             }
         }
@@ -414,14 +366,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($upd2) {
                 $upd2->bind_param("si", $destRel, $student_id);
                 if (!$upd2->execute()) {
-                    file_put_contents($logFile, date('c') . " - face DB update failed: " . $upd2->errno . " - " . $upd2->error . PHP_EOL, FILE_APPEND);
+                    file_put_contents($logFile, date('c') . " - face DB update failed: " . $upd2->error . PHP_EOL, FILE_APPEND);
                     header('Content-Type: application/json; charset=utf-8');
                     echo json_encode(['status' => 'error', 'message' => 'DB update failed.']);
                     exit;
                 }
                 $upd2->close();
-            } else {
-                file_put_contents($logFile, date('c') . " - prepare(update face) failed: {$conn->errno} - {$conn->error}" . PHP_EOL, FILE_APPEND);
             }
         } else {
             // descriptor was saved to DB already (or there was no descriptor). Ensure face_image_path updated if not already.
@@ -430,14 +380,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($upd3) {
                     $upd3->bind_param("si", $destRel, $student_id);
                     if (!$upd3->execute()) {
-                        file_put_contents($logFile, date('c') . " - face DB update failed: " . $upd3->errno . " - " . $upd3->error . PHP_EOL, FILE_APPEND);
+                        file_put_contents($logFile, date('c') . " - face DB update failed: " . $upd3->error . PHP_EOL, FILE_APPEND);
                         header('Content-Type: application/json; charset=utf-8');
                         echo json_encode(['status' => 'error', 'message' => 'DB update failed.']);
                         exit;
                     }
                     $upd3->close();
-                } else {
-                    file_put_contents($logFile, date('c') . " - prepare(update face) failed: {$conn->errno} - {$conn->error}" . PHP_EOL, FILE_APPEND);
                 }
             }
         }
