@@ -1,6 +1,8 @@
 <?php
 // --- Handle Toast Logic & Actions ---
 include("../config/db.php");
+require_once __DIR__ . '/../../vendor/autoload.php';
+use PhpOffice\PhpSpreadsheet\IOFactory;
 $toast = '';
 if (isset($_GET['success'])) {
   if ($_GET['success'] === 'add') $toast = 'Teacher added successfully!';
@@ -16,7 +18,6 @@ function redirect_with_toast($type) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-  // Create Teacher
   if (isset($_POST['create_teacher'])) {
     $stmt = $conn->prepare("INSERT INTO teachers (fullname, username, password) VALUES (?, ?, ?)");
     $stmt->bind_param("sss", $_POST['fullname'], $_POST['username'], password_hash($_POST['password'], PASSWORD_DEFAULT));
@@ -24,7 +25,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect_with_toast('add');
   }
 
-  // Update Teacher
   if (isset($_POST['update_teacher'])) {
     if (!empty($_POST['password'])) {
       $stmt = $conn->prepare("UPDATE teachers SET fullname = ?, username = ?, password = ? WHERE teacher_id = ?");
@@ -38,7 +38,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect_with_toast('update');
   }
 
-  // Delete Teacher
   if (isset($_POST['delete_teacher'])) {
     $stmt = $conn->prepare("DELETE FROM teachers WHERE teacher_id = ?");
     $stmt->bind_param("i", $_POST['teacher_id']);
@@ -46,7 +45,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     redirect_with_toast('delete');
   }
 
-  // Assign Teacher
   if (isset($_POST['assign_teacher'])) {
     $teacherId = $_POST['teacher_id'];
     $subjectName = trim($_POST['subject_name']);
@@ -54,22 +52,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $schoolYearId = $_POST['school_year_id'];
     $isAdvisory = $_POST['is_advisory'] ?? 'no';
 
-    // Check for conflict
+    // Check if same subject and section is already assigned (regardless of teacher)
     $conflictCheck = $conn->prepare("SELECT * FROM subjects s JOIN advisory_classes ac ON s.advisory_id = ac.advisory_id WHERE s.subject_name = ? AND ac.class_name = ? AND s.school_year_id = ?");
     $conflictCheck->bind_param("ssi", $subjectName, $sectionName, $schoolYearId);
     $conflictCheck->execute();
     $conflictResult = $conflictCheck->get_result();
-    if ($conflictResult->num_rows > 0) redirect_with_toast('conflict');
+
+    if ($conflictResult->num_rows > 0) {
+      redirect_with_toast('conflict');
+    }
     $conflictCheck->close();
 
-    // Normal assignment
+    // Proceed with normal assignment
     $stmt = $conn->prepare("SELECT advisory_id FROM advisory_classes WHERE teacher_id = ? AND school_year_id = ? AND class_name = ?");
     $stmt->bind_param("iis", $teacherId, $schoolYearId, $sectionName);
     $stmt->execute();
     $result = $stmt->get_result();
+
     if ($result->num_rows > 0) {
       $advisoryId = $result->fetch_assoc()['advisory_id'];
     } else {
+
       $insertAdvisory = $conn->prepare("INSERT INTO advisory_classes (teacher_id, school_year_id, class_name, is_advisory) VALUES (?, ?, ?, ?)");
       $insertAdvisory->bind_param("iiss", $teacherId, $schoolYearId, $sectionName, $isAdvisory);
       $insertAdvisory->execute();
@@ -78,6 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     $stmt->close();
 
+    // Final insert
     $insertSubject = $conn->prepare("INSERT INTO subjects (teacher_id, subject_name, advisory_id, school_year_id) VALUES (?, ?, ?, ?)");
     $insertSubject->bind_param("isii", $teacherId, $subjectName, $advisoryId, $schoolYearId);
     $insertSubject->execute();
@@ -85,37 +89,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     redirect_with_toast('assigned');
   }
-
-  // ------------------- Import Teachers CSV -------------------
-  if (isset($_POST['import_teachers']) && isset($_FILES['teachers_file'])) {
-    $fileTmpPath = $_FILES['teachers_file']['tmp_name'];
-    $fileName = $_FILES['teachers_file']['name'];
-    $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-    try {
-      if ($fileExt === 'csv') {
-        $file = fopen($fileTmpPath, 'r');
-        $firstRow = true;
-        while (($row = fgetcsv($file, 1000, ",")) !== FALSE) {
-          if ($firstRow) { $firstRow = false; continue; } // skip header
-          $fullname = $row[0];
-          $username = $row[1];
-          $password = password_hash($row[2], PASSWORD_DEFAULT);
-          $stmt = $conn->prepare("INSERT INTO teachers (fullname, username, password) VALUES (?, ?, ?)");
-          $stmt->bind_param("sss", $fullname, $username, $password);
-          $stmt->execute(); $stmt->close();
-        }
-        fclose($file);
-        redirect_with_toast('add');
-      } else {
-        throw new Exception("Only CSV files are supported.");
-      }
-    } catch (Exception $e) {
-      echo "<script>alert('Error importing file: ".$e->getMessage()."');</script>";
+}
+// ---------- Import Teachers from File ----------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_teachers'])) {
+    if (!isset($_FILES['teachers_file']) || $_FILES['teachers_file']['error'] !== UPLOAD_ERR_OK) {
+        echo "<script>alert('File upload failed.');</script>";
+        exit;
     }
-  }
+
+    $tmp = $_FILES['teachers_file']['tmp_name'];
+    $ext = strtolower(pathinfo($_FILES['teachers_file']['name'], PATHINFO_EXTENSION));
+    $rows = [];
+
+    try {
+        if ($ext === 'csv') {
+            if (($handle = fopen($tmp, 'r')) !== false) {
+                while (($data = fgetcsv($handle, 1000, ',')) !== false) $rows[] = $data;
+                fclose($handle);
+            }
+        } elseif (in_array($ext, ['xls', 'xlsx'])) {
+            $spreadsheet = IOFactory::load($tmp);
+            $worksheet = $spreadsheet->getActiveSheet();
+            $rows = $worksheet->toArray();
+        } else {
+            echo "<script>alert('Unsupported file type. Please upload CSV or XLSX.');</script>";
+            exit;
+        }
+    } catch (Throwable $e) {
+        echo "<script>alert('Failed to read Excel file: " . addslashes($e->getMessage()) . "');</script>";
+        exit;
+    }
+
+    // Expected headers: Fullname | Username | Password
+    $inserted = 0; $skipped = 0;
+    foreach ($rows as $i => $r) {
+        if ($i === 0) continue; // skip header
+        $fullname = trim($r[0] ?? '');
+        $username = trim($r[1] ?? '');
+        $password = trim($r[2] ?? '');
+
+        if ($fullname === '' || $username === '' || $password === '') continue;
+
+        // Skip if username already exists
+        $stmt = $conn->prepare("SELECT 1 FROM teachers WHERE username=? LIMIT 1");
+        $stmt->bind_param('s', $username);
+        $stmt->execute();
+        $stmt->store_result();
+        if ($stmt->num_rows > 0) { $skipped++; $stmt->close(); continue; }
+        $stmt->close();
+
+        $hashed = password_hash($password, PASSWORD_DEFAULT);
+        $stmt = $conn->prepare("INSERT INTO teachers (fullname, username, password) VALUES (?, ?, ?)");
+        $stmt->bind_param('sss', $fullname, $username, $hashed);
+        $stmt->execute(); $stmt->close();
+        $inserted++;
+    }
+
+    echo "<script>alert('Imported {$inserted} teachers. Skipped {$skipped}.');location.href='admin.php?page=teachers';</script>";
+    exit;
 }
 
-// Fetch data
 $teachers = $conn->query("SELECT * FROM teachers ORDER BY fullname ASC");
 $school_years = $conn->query("SELECT * FROM school_years WHERE status = 'active'");
 $master_subjects = $conn->query("SELECT * FROM master_subjects");
@@ -129,32 +162,8 @@ $res = $conn->query("SELECT ac.teacher_id, ac.class_name, sy.year_label
 while ($row = $res->fetch_assoc()) {
   $teacherAdvisories[$row['teacher_id']] = $row['class_name'] . ' (' . $row['year_label'] . ')';
 }
+
 ?>
-
-<!-- Notification Bell HTML, Add/Edit/Delete/Assign Modals (keep all your original 392 lines intact) -->
-
-<!-- Add Import Button -->
-<div class="flex space-x-2 mb-4">
-  <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">➕ Add Teacher</button>
-  <button onclick="document.getElementById('importModal').classList.remove('hidden')" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">📁 Import Teachers</button>
-</div>
-
-<!-- Import Modal -->
-<div id="importModal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center hidden z-50">
-  <div class="bg-white p-6 rounded shadow max-w-md w-full fade-in">
-    <h3 class="text-xl font-bold mb-4">Import Teachers from CSV</h3>
-    <form method="POST" enctype="multipart/form-data">
-      <div class="mb-3">
-        <label>Select CSV file</label>
-        <input type="file" name="teachers_file" accept=".csv" class="w-full border p-2 rounded" required>
-      </div>
-      <button type="submit" name="import_teachers" class="bg-green-600 text-white px-4 py-2 rounded">Import</button>
-      <button type="button" onclick="document.getElementById('importModal').classList.add('hidden')" class="ml-2 text-gray-600">Cancel</button>
-    </form>
-  </div>
-</div>
-
-
 
 <!-- Notification Bell HTML -->
 <div class="relative float-right mb-4 z-50">
@@ -228,6 +237,16 @@ while ($row = $res->fetch_assoc()) {
 <?php endif; ?>
 
 <div class="mb-4 flex items-center justify-between">
+  <div>
+    <button onclick="document.getElementById('importModal').classList.remove('hidden')" 
+        class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 ml-2">
+  📂 Import File
+</button>
+
+    <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+      ➕ Add Teacher
+    </button>
+  </div>
 
   <!-- Full Name search (search-only) -->
   <div class="w-1/3">
@@ -357,6 +376,24 @@ while ($row = $res->fetch_assoc()) {
   </tbody>
 </table>
 
+<!-- Import Modal -->
+<div id="importModal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center hidden z-50">
+  <div class="bg-white p-6 rounded shadow max-w-md w-full fade-in">
+    <h3 class="text-xl font-bold mb-4">Import Teachers from File</h3>
+    <form method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="import_teachers" value="1">
+      <div class="mb-3">
+        <label class="block text-sm font-semibold">Select CSV/XLSX File</label>
+        <input type="file" name="teachers_file" accept=".csv,.xls,.xlsx" required class="w-full border p-2 rounded">
+      </div>
+      <p class="text-sm text-gray-500 mt-1">Columns should be: <strong>Fullname, Username, Password</strong></p>
+      <div class="mt-4 flex justify-end gap-2">
+        <button type="button" onclick="document.getElementById('importModal').classList.add('hidden')" class="text-gray-600">Cancel</button>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Upload & Import</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 
 <!-- Add Modal -->
