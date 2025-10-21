@@ -1,6 +1,6 @@
   <?php
   session_start();
-
+ob_start(); 
   // DEBUG: show last lines of import log (temporary — remove when done)
   // Only echo debug HTML for normal page loads. For AJAX/JSON requests (fetch_advisories, JSON POST retake),
   // we LOG to the same file instead to avoid corrupting JSON responses.
