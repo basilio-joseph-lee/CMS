@@ -1,10 +1,10 @@
 <?php
 // ============================================================================
-// /api/log_behavior.php — Handles student behavior logs (improved SMS notify)
+// /api/log_behavior.php — Handles student behavior logs (SMS only on attendance)
 // ============================================================================
 
 if (session_status() === PHP_SESSION_NONE) {
-    session_start(); // keep existing session behavior
+    session_start();
 }
 
 error_reporting(E_ERROR | E_PARSE);
@@ -13,14 +13,13 @@ header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 date_default_timezone_set('Asia/Manila');
 
-ob_start(); // swallow any accidental output until we emit JSON
+ob_start();
 
 require_once __DIR__ . '/../config/db.php';    // expects $conn (mysqli)
 if (file_exists(__DIR__ . '/../config/sms.php')) {
     require_once __DIR__ . '/../config/sms.php'; // provides ph_e164() and send_sms()
 }
 
-// minimal response skeleton
 $response = ['success' => false, 'message' => 'Unknown error'];
 
 try {
@@ -29,12 +28,10 @@ try {
     }
     $conn->set_charset('utf8mb4');
 
-    // Read JSON or form-encoded body
     $raw = file_get_contents('php://input');
     $data = json_decode($raw, true);
     if (!is_array($data)) $data = $_POST;
 
-    // Prefer session; fall back to body
     $student_id = isset($_SESSION['student_id']) ? (int)$_SESSION['student_id']
                 : (int)($data['student_id'] ?? 0);
 
@@ -43,19 +40,13 @@ try {
     }
 
     $rawType = trim((string)($data['action_type'] ?? ($data['action'] ?? '')));
-    if ($rawType === '') {
-        throw new Exception('Missing action_type.');
-    }
+    if ($rawType === '') throw new Exception('Missing action_type.');
 
-    // normalize action_type
     $t = strtolower($rawType);
     $t = preg_replace('/[^a-z0-9]+/i', '_', $t);
     $t = trim($t, '_');
 
-    // support legacy signal
-    if (isset($data['attendance']) && $data['attendance']) $t = 'attendance';
-
-    // alias map (same as before)
+    // alias map
     $aliases = [
         'i_m_back' => 'im_back', 'imback' => 'im_back', 'i_am_back' => 'im_back',
         'back_to_class' => 'im_back', 'returned' => 'im_back', 'came_back' => 'im_back',
@@ -67,7 +58,6 @@ try {
     ];
     if (isset($aliases[$t])) $t = $aliases[$t];
 
-    // allowlist
     $allowed = [
         'restroom','snack','lunch_break','water_break','not_well',
         'borrow_book','return_material','participated','help_request',
@@ -80,7 +70,7 @@ try {
     $nowPH = (new DateTime('now', new DateTimeZone('Asia/Manila')))->format('Y-m-d H:i:s');
 
     // ---------------------------
-    // Only record attendance for 'attendance' action
+    // Attendance insertion & SMS only for 'attendance'
     // ---------------------------
     if ($t === 'attendance') {
         $subject_id = isset($_SESSION['subject_id']) ? (int)$_SESSION['subject_id'] : (int)($data['subject_id'] ?? 0);
@@ -96,49 +86,9 @@ try {
         } else {
             error_log('attendance_records prepare failed: '.$conn->error);
         }
-    }
 
-    // ---------------------------
-    // Insert behavior log (always for all actions including 'im_back')
-    // ---------------------------
-    $stmt = $conn->prepare("INSERT INTO behavior_logs (student_id, action_type, timestamp) VALUES (?, ?, ?)");
-    if (!$stmt) throw new Exception('Prepare failed: '.$conn->error);
-    $stmt->bind_param('iss', $student_id, $t, $nowPH);
-    if (!$stmt->execute()) throw new Exception('Execute failed: '.$stmt->error);
-    $insertId = $stmt->insert_id;
-    $stmt->close();
-
-    // friendly messages (same mapping)
-    $friendly = [
-        'restroom'        => '🚻 Restroom log saved.',
-        'snack'           => '🍎 Snack break recorded.',
-        'lunch_break'     => '🍱 Lunch break logged.',
-        'water_break'     => '💧 Water break recorded.',
-        'not_well'        => '🤒 Health log saved.',
-        'borrow_book'     => '📚 Borrowing material noted.',
-        'return_material' => '📦 Return recorded.',
-        'participated'    => '✅ Participation logged.',
-        'help_request'    => '✋ Help request sent.',
-        'attendance'      => '✅ Attendance recorded.',
-        'im_back'         => '🟢 Welcome back!',
-        'out_time'        => '🚪 Out time recorded.',
-        'log_out'         => '👋 Logged out.',
-    ];
-
-    $response = [
-        'success'    => true,
-        'message'    => $friendly[$t] ?? 'Behavior log saved.',
-        'normalized' => $t,
-        'student_id' => $student_id,
-        'insert_id'  => (int)$insertId,
-    ];
-
-    // ---------------------------
-    // Notify parent via SMS ONLY for 'attendance', NOT 'im_back'
-    // ---------------------------
-    if ($t === 'attendance') {
+        // --- SMS section ---
         $sms_meta = ['sent'=>false, 'reason'=>'not_attempted'];
-
         $sqlP = "
             SELECT s.fullname AS student_name,
                    p.parent_id AS parent_id,
@@ -213,13 +163,7 @@ try {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )");
 
-        if (!$to_e164) {
-            $sms_meta = ['sent'=>false, 'reason'=>'invalid_mobile', 'raw' => $parent_mobile_raw];
-            $response['sms'] = $sms_meta;
-        } elseif (!function_exists('send_sms')) {
-            $sms_meta = ['sent'=>false, 'reason'=>'send_sms_missing', 'to' => $to_e164];
-            $response['sms'] = $sms_meta;
-        } else {
+        if ($to_e164 && function_exists('send_sms')) {
             $smsRes = send_sms($parent_mobile_raw, $msg);
             $ok = $smsRes['ok'] ?? false;
             $http = $smsRes['http'] ?? null;
@@ -247,6 +191,41 @@ try {
             $response['sms'] = $sms_meta;
         }
     }
+
+    // ---------------------------
+    // Insert behavior log for ALL actions (including 'im_back'), no attendance or SMS
+    // ---------------------------
+    if ($t !== 'attendance') {
+        $stmt = $conn->prepare("INSERT INTO behavior_logs (student_id, action_type, timestamp) VALUES (?, ?, ?)");
+        if ($stmt) {
+            $stmt->bind_param('iss', $student_id, $t, $nowPH);
+            $stmt->execute();
+            $insertId = $stmt->insert_id;
+            $stmt->close();
+        }
+    }
+
+    $friendly = [
+        'restroom'        => '🚻 Restroom log saved.',
+        'snack'           => '🍎 Snack break recorded.',
+        'lunch_break'     => '🍱 Lunch break logged.',
+        'water_break'     => '💧 Water break recorded.',
+        'not_well'        => '🤒 Health log saved.',
+        'borrow_book'     => '📚 Borrowing material noted.',
+        'return_material' => '📦 Return recorded.',
+        'participated'    => '✅ Participation logged.',
+        'help_request'    => '✋ Help request sent.',
+        'attendance'      => '✅ Attendance recorded.',
+        'im_back'         => '🟢 Welcome back!',
+        'out_time'        => '🚪 Out time recorded.',
+        'log_out'         => '👋 Logged out.',
+    ];
+
+    $response['success'] = true;
+    $response['message'] = $friendly[$t] ?? 'Behavior log saved.';
+    $response['normalized'] = $t;
+    $response['student_id'] = $student_id;
+    $response['insert_id'] = isset($insertId) ? (int)$insertId : null;
 
 } catch (Throwable $e) {
     $response = ['success' => false, 'message' => $e->getMessage()];
