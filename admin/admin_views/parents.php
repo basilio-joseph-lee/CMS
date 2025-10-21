@@ -72,10 +72,21 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
   <div class="toast"><?= $toast ?></div>
 <?php endif; ?>
 
-<div class="mb-4">
-  <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-    ➕ Add Parent
-  </button>
+<div class="mb-4 flex items-center justify-between">
+  <div>
+    <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+      ➕ Add Parent
+    </button>
+  </div>
+
+  <!-- Full Name search (search-only) -->
+  <div class="w-1/3">
+    <label class="block text-sm text-gray-600 mb-1">Search by Full Name</label>
+    <input id="filter_q" type="search" placeholder="Type full name (realtime)..." class="w-full border p-2 rounded" oninput="filterRows()">
+    <div class="mt-2 text-right">
+      <button class="text-sm text-gray-600 underline" onclick="clearSearch()">Clear search</button>
+    </div>
+  </div>
 </div>
 
 <table class="min-w-full bg-white shadow rounded">
@@ -87,9 +98,10 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
       <th class="py-2 px-4 text-left">Actions</th>
     </tr>
   </thead>
-  <tbody>
+  <tbody id="parents_tbody">
     <?php while($row = $parents->fetch_assoc()): ?>
-      <tr class="border-t">
+      <tr class="border-t parent-row"
+          data-fullname="<?= htmlspecialchars($row['fullname'], ENT_QUOTES) ?>">
         <td class="py-2 px-4"><?= htmlspecialchars($row['fullname']) ?></td>
         <td class="py-2 px-4"><?= htmlspecialchars($row['email']) ?></td>
         <td class="py-2 px-4"><?= htmlspecialchars($row['mobile_number']) ?></td>
@@ -173,3 +185,42 @@ $parents = $conn->query("SELECT * FROM parents ORDER BY fullname ASC");
     </form>
   </div>
 </div>
+
+<script>
+  // Realtime Full Name search for Parents
+  const parentsTbody = document.getElementById('parents_tbody');
+  const filterQ = document.getElementById('filter_q');
+
+  function clearSearch() {
+    filterQ.value = '';
+    filterRows();
+  }
+
+  function filterRows() {
+    const q = (filterQ.value || '').trim().toLowerCase();
+    const rows = parentsTbody.querySelectorAll('.parent-row');
+    let anyVisible = false;
+    rows.forEach(row => {
+      const fullname = (row.getAttribute('data-fullname') || '').toLowerCase();
+      const visible = q === '' || fullname.indexOf(q) !== -1;
+      row.style.display = visible ? '' : 'none';
+      if (visible) anyVisible = true;
+    });
+
+    // Optional: show a "no results" row when nothing matches
+    let noRow = document.getElementById('no_results_row_parents');
+    if (!anyVisible) {
+      if (!noRow) {
+        noRow = document.createElement('tr');
+        noRow.id = 'no_results_row_parents';
+        noRow.innerHTML = '<td class="py-6 px-3 text-center text-gray-500 italic" colspan="4">No parents found.</td>';
+        parentsTbody.appendChild(noRow);
+      }
+    } else {
+      if (noRow) noRow.remove();
+    }
+  }
+
+  // initial run
+  filterRows();
+</script>
