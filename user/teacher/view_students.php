@@ -1,6 +1,6 @@
   <?php
   session_start();
-ob_start(); 
+
   // DEBUG: show last lines of import log (temporary — remove when done)
   // Only echo debug HTML for normal page loads. For AJAX/JSON requests (fetch_advisories, JSON POST retake),
   // we LOG to the same file instead to avoid corrupting JSON responses.
@@ -256,35 +256,22 @@ ob_start();
 
           $conn->rollback();
 
-          // Compose a very detailed debug payload
-          $time = date('c');
-          $mysqli_errno = method_exists($conn, 'errno') ? $conn->errno : 'N/A';
-          $mysqli_error = method_exists($conn, 'error') ? $conn->error : 'N/A';
+          // Build a richer debug payload
+          $dbg = [
+            'time' => date('c'),
+            'exception_message' => $e->getMessage(),
+            'mysqli_errno' => method_exists($conn, 'errno') ? $conn->errno : null,
+            'mysqli_error' => method_exists($conn, 'error') ? $conn->error : null,
+            // limited stack trace for context
+            'trace' => array_slice(explode("\n", $e->getTraceAsString()), 0, 8)
+          ];
+          $dbg_text = date('c') . " - Import exception: " . $e->getMessage()
+                    . "\nDB errno: " . ($dbg['mysqli_errno'] ?? 'N/A')
+                    . "\nDB error: " . ($dbg['mysqli_error'] ?? 'N/A')
+                    . "\nTrace: " . implode(" | ", $dbg['trace']) . "\n\n";
 
-          // Build a compact backtrace showing file:line -> function (first 12 frames)
-          $bt = [];
-          foreach (array_slice(debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS), 0, 12) as $frame) {
-              $f = (isset($frame['file']) ? $frame['file'] : '(internal)') . ':' . (isset($frame['line']) ? $frame['line'] : '?');
-              $fn = isset($frame['function']) ? $frame['function'] : '';
-              $bt[] = $f . '::' . $fn;
-          }
-
-          $payload = $time . " - Import exception\n"
-                   . "Exception message: " . $e->getMessage() . "\n"
-                   . "MySQLi errno: " . $mysqli_errno . "\n"
-                   . "MySQLi error: " . $mysqli_error . "\n"
-                   . "Trace: " . implode(" | ", $bt) . "\n"
-                   . "REQUEST_URI: " . ($_SERVER['REQUEST_URI'] ?? '') . "\n"
-                   . "HTTP_X_REQUESTED_WITH: " . ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') . "\n"
-                   . "POST (trimmed): " . (empty($_POST) ? '[]' : substr(print_r($_POST, true), 0, 1200)) . "\n"
-                   . "SESSION (trimmed): " . (empty($_SESSION) ? '[]' : substr(print_r($_SESSION, true), 0, 1200)) . "\n\n";
-
-          // Append to your import_errors.log and also to PHP error_log
-          @file_put_contents($logFile, $payload, FILE_APPEND);
-          @error_log($payload);
-
-          // Optional: also write a separate small file to make the latest error easy to tail
-          @file_put_contents(__DIR__ . '/logs/import_last_error.txt', $payload);
+          file_put_contents($logFile, $dbg_text, FILE_APPEND);
+          @error_log($dbg_text);
 
           $_SESSION['toast'] = "Import failed: DB error (see server logs).";
           $_SESSION['toast_type'] = "error";
