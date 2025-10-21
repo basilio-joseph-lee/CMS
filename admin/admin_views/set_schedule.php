@@ -212,6 +212,43 @@ $stmt->close();
 
     <?php if ($toast): ?><div class="toast"><?= htmlspecialchars($toast) ?></div><?php endif; ?>
 
+    <!-- FILTER / SEARCH -->
+    <div class="mb-4 bg-white p-4 rounded shadow">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">Section (Filter)</label>
+          <select id="filter_section" class="w-full border p-2 rounded" onchange="onFilterSectionChange()">
+            <option value="">All sections</option>
+            <?php foreach ($sections as $s): ?>
+              <option value="<?= (int)$s['advisory_id'] ?>"><?= htmlspecialchars($s['class_name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-600 mb-1">Subject (Filter)</label>
+          <select id="filter_subject" class="w-full border p-2 rounded" onchange="filterRows()">
+            <option value="">All subjects</option>
+            <?php
+              // Optionally include all subjects initially
+              foreach ($subjects as $subj) {
+                echo '<option value="'.(int)$subj['subject_id'].'">'.htmlspecialchars($subj['subject_name']).'</option>';
+              }
+            ?>
+          </select>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-sm text-gray-600 mb-1">Search (section or subject)</label>
+          <input id="filter_q" type="search" placeholder="Type to search (realtime)..." class="w-full border p-2 rounded" oninput="filterRows()">
+        </div>
+      </div>
+
+      <div class="mt-3 text-right">
+        <button class="text-sm text-gray-600 underline" onclick="clearFilters()">Clear filters</button>
+      </div>
+    </div>
+
     <div class="bg-white shadow rounded overflow-hidden">
       <table class="min-w-full">
         <thead class="bg-blue-50 text-gray-700">
@@ -225,11 +262,21 @@ $stmt->close();
             <th class="py-2 px-3 text-left">Actions</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="schedule_tbody">
           <?php if (empty($blocks)): ?>
             <tr><td colspan="7" class="py-6 px-3 text-center text-gray-500">No schedule yet for <?= htmlspecialchars($ACTIVE_SY_LABEL) ?>.</td></tr>
-          <?php else: foreach ($blocks as $b): ?>
-            <tr class="border-t">
+          <?php else: foreach ($blocks as $b):
+            // prepare data attributes for JS filtering (escape properly)
+            $data_advisory = (int)$b['advisory_id'];
+            $data_subject  = (int)$b['subject_id'];
+            $data_advisory_name = htmlspecialchars($b['class_name'] ?? '');
+            $data_subject_name  = htmlspecialchars($b['subject_name'] ?? '');
+            ?>
+            <tr class="border-t schedule-row"
+                data-advisory-id="<?= $data_advisory ?>"
+                data-subject-id="<?= $data_subject ?>"
+                data-advisory-name="<?= $data_advisory_name ?>"
+                data-subject-name="<?= $data_subject_name ?>">
               <td class="py-2 px-3"><?= ['','Mon','Tue','Wed','Thu','Fri','Sat','Sun'][$b['day_of_week']] ?? $b['day_of_week'] ?></td>
               <td class="py-2 px-3"><?= htmlspecialchars($b['class_name'] ?? ('#'.$b['advisory_id'])) ?></td>
               <td class="py-2 px-3"><?= htmlspecialchars($b['subject_name'] ?? ('#'.$b['subject_id'])) ?></td>
@@ -370,10 +417,12 @@ $stmt->close();
 
 <script>
 // --- data for dependent dropdown ---
-const subjectsByAdvisory = <?=
-  json_encode($subjectsByAdvisory, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT);
-?>;
+// subjectsByAdvisory is map: advisory_id => [{subject_id,advisory_id,subject_name}, ...]
+const subjectsByAdvisory = <?= json_encode($subjectsByAdvisory, JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>;
+// sections list for JS (advisory_id => class_name)
+const sectionsList = <?= json_encode(array_column($sections, null, 'advisory_id') ?: [], JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_AMP|JSON_HEX_QUOT); ?>;
 
+// Helper to populate subject selects
 function populateSubjects(advisorySelectId, subjectSelectId, selectedSubjectId = null) {
   const advSel = document.getElementById(advisorySelectId);
   const subSel = document.getElementById(subjectSelectId);
@@ -441,6 +490,95 @@ document.addEventListener('click', (e) => {
   if (e.target.id === 'addModal') closeAdd();
   if (e.target.id === 'editModal') closeEdit();
 });
+
+
+// -------------------------
+// Realtime filtering logic
+// -------------------------
+const scheduleTbody = document.getElementById('schedule_tbody');
+const filterSection = document.getElementById('filter_section');
+const filterSubject = document.getElementById('filter_subject');
+const filterQ = document.getElementById('filter_q');
+
+function onFilterSectionChange() {
+  const aid = filterSection.value;
+  // repopulate filter_subject with subjects for this section (or all if none)
+  filterSubject.innerHTML = '';
+  const allOption = document.createElement('option');
+  allOption.value = '';
+  allOption.textContent = 'All subjects';
+  filterSubject.appendChild(allOption);
+
+  if (aid && subjectsByAdvisory[aid]) {
+    subjectsByAdvisory[aid].forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.subject_id;
+      opt.textContent = s.subject_name;
+      filterSubject.appendChild(opt);
+    });
+  } else {
+    // populate all subjects (from original subjects list)
+    // we can reconstruct from subjectsByAdvisory
+    Object.keys(subjectsByAdvisory).forEach(k => {
+      subjectsByAdvisory[k].forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.subject_id;
+        opt.textContent = s.subject_name;
+        filterSubject.appendChild(opt);
+      });
+    });
+  }
+
+  filterRows();
+}
+
+function clearFilters() {
+  filterSection.value = '';
+  // repopulate subjects to all
+  onFilterSectionChange();
+  filterQ.value = '';
+  filterRows();
+}
+
+function filterRows() {
+  const sectionVal = filterSection.value; // advisory_id or ''
+  const subjectVal = filterSubject.value; // subject_id or ''
+  const q = (filterQ.value || '').trim().toLowerCase();
+
+  // iterate rows
+  const rows = scheduleTbody.querySelectorAll('.schedule-row');
+  rows.forEach(row => {
+    const rowAid = row.getAttribute('data-advisory-id') || '';
+    const rowSid = row.getAttribute('data-subject-id') || '';
+    const rowAdvisoryName = (row.getAttribute('data-advisory-name') || '').toLowerCase();
+    const rowSubjectName = (row.getAttribute('data-subject-name') || '').toLowerCase();
+
+    let visible = true;
+
+    // filter by section select (if chosen)
+    if (sectionVal && String(sectionVal) !== String(rowAid)) visible = false;
+
+    // filter by subject select (if chosen)
+    if (subjectVal && String(subjectVal) !== String(rowSid)) visible = false;
+
+    // free-text search: match advisory name or subject name
+    if (q) {
+      const matches = rowAdvisoryName.indexOf(q) !== -1 || rowSubjectName.indexOf(q) !== -1;
+      if (!matches) visible = false;
+    }
+
+    // apply display
+    if (visible) {
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
+  });
+}
+
+// initial call so table respects any default filters
+onFilterSectionChange();
+
 </script>
 </body>
 </html>
