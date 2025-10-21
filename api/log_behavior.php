@@ -85,7 +85,8 @@ try {
         $advisory_id = isset($_SESSION['advisory_id']) ? (int)$_SESSION['advisory_id'] : (int)($data['advisory_id'] ?? 0);
         $school_year_id = isset($_SESSION['school_year_id']) ? (int)$_SESSION['school_year_id'] : (int)($data['school_year_id'] ?? 0);
 
-        $stmtA = $conn->prepare("INSERT INTO attendance_records (student_id, subject_id, advisory_id, school_year_id, status, created_at) VALUES (?,?,?,?,?,?)");
+        // updated: use timestamp instead of created_at
+        $stmtA = $conn->prepare("INSERT INTO attendance_records (student_id, subject_id, advisory_id, school_year_id, status, timestamp) VALUES (?,?,?,?,?,?)");
         if ($stmtA) {
             $status = 'Present';
             $stmtA->bind_param("iiiiss", $student_id, $subject_id, $advisory_id, $school_year_id, $status, $nowPH);
@@ -133,10 +134,8 @@ try {
     // Notify parent via SMS when attendance logged
     // ------------------------
     if ($t === 'attendance') {
-        // default sms metadata
         $sms_meta = ['sent'=>false, 'reason'=>'not_attempted'];
 
-        // Try lookup via parents table (preferred): students.parent_id -> parents table
         $sqlP = "
             SELECT s.fullname AS student_name,
                    p.parent_id AS parent_id,
@@ -157,7 +156,6 @@ try {
             $rowP = null;
         }
 
-        // fallback: attempt to read common phone columns directly from students
         if (empty($rowP)) {
             $stmtCols = $conn->prepare("SELECT fullname, parent_mobile, parent_phone, guardian_mobile, guardian_phone, mobile, phone FROM students WHERE student_id = ? LIMIT 1");
             if ($stmtCols) {
@@ -179,17 +177,14 @@ try {
             }
         }
 
-        // Normalize phone and send if possible
         $parent_mobile_raw = $rowP['parent_mobile'] ?? null;
         $studentName = $rowP['student_name'] ?? 'Your child';
         $parent_id = isset($rowP['parent_id']) && $rowP['parent_id'] !== '' ? (int)$rowP['parent_id'] : null;
 
-        // Use ph_e164() helper if present; otherwise try simple normalization
         $to_e164 = null;
         if (function_exists('ph_e164')) {
             $to_e164 = ph_e164($parent_mobile_raw);
         } else {
-            // basic normalization very similar to teacher code
             if ($parent_mobile_raw) {
                 $digits = preg_replace('/\D+/', '', $parent_mobile_raw);
                 if (strlen($digits) === 11 && str_starts_with($digits, '0')) $to_e164 = '63' . substr($digits, 1);
@@ -198,11 +193,9 @@ try {
             }
         }
 
-        // Build message
         $senderName = $MOCEAN_SENDER ?? ($MOCEAN_SENDER = 'MySchoolness');
         $msg = "{$studentName} is marked PRESENT on {$nowPH}. — {$senderName}";
 
-        // ensure sms_logs table exists (non-blocking)
         $conn->query("CREATE TABLE IF NOT EXISTS sms_logs (
             id INT AUTO_INCREMENT PRIMARY KEY,
             student_id INT NULL,
@@ -224,16 +217,13 @@ try {
             $sms_meta = ['sent'=>false, 'reason'=>'send_sms_missing', 'to' => $to_e164];
             $response['sms'] = $sms_meta;
         } else {
-            // Call send_sms from config/sms.php
-            $smsRes = send_sms($parent_mobile_raw, $msg); // send_sms will normalize internally, but we also pass raw for logging
-            // send_sms returns array with keys: ok, to, http, provider_status, msgid, error, raw
+            $smsRes = send_sms($parent_mobile_raw, $msg);
             $ok = $smsRes['ok'] ?? false;
             $http = $smsRes['http'] ?? null;
             $prov_status = $smsRes['provider_status'] ?? ($smsRes['status'] ?? null);
             $prov_msgid = $smsRes['msgid'] ?? ($smsRes['message-id'] ?? null);
             $prov_error = $smsRes['error'] ?? null;
 
-            // Insert sms_logs record
             $stmtL = $conn->prepare("INSERT INTO sms_logs (student_id,parent_id,to_e164,message,provider,provider_msgid,status,http_code,provider_error) VALUES (?,?,?,?,?,?,?,?,?)");
             if ($stmtL) {
                 $prov = 'mocean';
@@ -255,13 +245,11 @@ try {
         }
     }
 
-    // finished successfully
 } catch (Throwable $e) {
     $response = ['success' => false, 'message' => $e->getMessage()];
 }
 
-// emit JSON
 ob_end_clean();
-http_response_code($response['success'] ? 200 : 200); // keep 200 so client sees body even on sms info; adjust if desired
+http_response_code($response['success'] ? 200 : 200);
 echo json_encode($response, JSON_UNESCAPED_UNICODE);
 exit;
