@@ -153,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['import_students'])) {
         $insertEnroll->close();
         $conn->commit();
 
-        redirect_with_toast('import');
+        redirect_with_toast("Imported {$imported} students. Skipped {$skipped}.", $imported > 0 ? 'success' : 'error');
     } catch (Exception $e) {
         $conn->rollback();
         file_put_contents($logFile, date('c')." - Import exception: ".$e->getMessage().PHP_EOL, FILE_APPEND);
