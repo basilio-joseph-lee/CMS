@@ -35,84 +35,84 @@ if (
     $_SESSION['school_year_id'] = (int)$_GET['school_year_id'];
 
     // ---------------- Auto-attendance for students ----------------
-    // if (isset($_SESSION['student_id'])) {
-    //     $studentId  = (int)$_SESSION['student_id'];
-    //     $advisoryId = (int)$_SESSION['advisory_id'];
-    //     $subjectId  = (int)$_SESSION['subject_id'];
-    //     $syId       = (int)$_SESSION['school_year_id'];
+    if (isset($_SESSION['student_id'])) {
+        $studentId  = (int)$_SESSION['student_id'];
+        $advisoryId = (int)$_SESSION['advisory_id'];
+        $subjectId  = (int)$_SESSION['subject_id'];
+        $syId       = (int)$_SESSION['school_year_id'];
 
-    //     $now   = new DateTime('now');
-    //     $today = $now->format('Y-m-d');
-    //     $dow   = (int)$now->format('N'); // 1..7
+        $now   = new DateTime('now');
+        $today = $now->format('Y-m-d');
+        $dow   = (int)$now->format('N'); // 1..7
 
-    //     // Prevent duplicate attendance for the same date
-    //     $dupe = $conn->prepare("
-    //         SELECT 1
-    //         FROM attendance_records
-    //         WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=?
-    //           AND DATE(`timestamp`) = CURDATE()
-    //         LIMIT 1
-    //     ");
-    //     $dupe->bind_param("iiii", $studentId, $subjectId, $advisoryId, $syId);
-    //     $dupe->execute();
-    //     $already = $dupe->get_result()->num_rows > 0;
-    //     $dupe->close();
+        // Prevent duplicate attendance for the same date
+        $dupe = $conn->prepare("
+            SELECT 1
+            FROM attendance_records
+            WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=?
+              AND DATE(`timestamp`) = CURDATE()
+            LIMIT 1
+        ");
+        $dupe->bind_param("iiii", $studentId, $subjectId, $advisoryId, $syId);
+        $dupe->execute();
+        $already = $dupe->get_result()->num_rows > 0;
+        $dupe->close();
 
-    //     if (!$already) {
-    //         // Find today's block
-    //         $stmt = $conn->prepare("
-    //             SELECT start_time, end_time
-    //             FROM schedule_timeblocks
-    //             WHERE school_year_id=? AND advisory_id=? AND subject_id=?
-    //               AND day_of_week=? AND active_flag=1
-    //             ORDER BY start_time ASC
-    //             LIMIT 1
-    //         ");
-    //         $stmt->bind_param("iiii", $syId, $advisoryId, $subjectId, $dow);
-    //         $stmt->execute();
-    //         $blk = $stmt->get_result()->fetch_assoc();
-    //         $stmt->close();
+        if (!$already) {
+            // Find today's block
+            $stmt = $conn->prepare("
+                SELECT start_time, end_time
+                FROM schedule_timeblocks
+                WHERE school_year_id=? AND advisory_id=? AND subject_id=?
+                  AND day_of_week=? AND active_flag=1
+                ORDER BY start_time ASC
+                LIMIT 1
+            ");
+            $stmt->bind_param("iiii", $syId, $advisoryId, $subjectId, $dow);
+            $stmt->execute();
+            $blk = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
 
-    //         if ($blk) {
-    //             $startTs = DateTime::createFromFormat('Y-m-d H:i:s', $today.' '.$blk['start_time']);
-    //             $endTs   = DateTime::createFromFormat('Y-m-d H:i:s', $today.' '.$blk['end_time']);
+            if ($blk) {
+                $startTs = DateTime::createFromFormat('Y-m-d H:i:s', $today.' '.$blk['start_time']);
+                $endTs   = DateTime::createFromFormat('Y-m-d H:i:s', $today.' '.$blk['end_time']);
 
-    //             $LATE_GRACE_MIN  = 5;   // <=5 mins late == Present
-    //             $ABSENT_IF_AFTER = true;
+                $LATE_GRACE_MIN  = 5;   // <=5 mins late == Present
+                $ABSENT_IF_AFTER = true;
 
-    //             $status = null;
-    //             if ($now >= $startTs && $now <= $endTs) {
-    //                 $diffMin = (int)floor(($now->getTimestamp() - $startTs->getTimestamp()) / 60);
-    //                 $status  = ($diffMin <= $LATE_GRACE_MIN) ? 'Present' : 'Late';
-    //             } elseif ($ABSENT_IF_AFTER && $now > $endTs) {
-    //                 $status = 'Absent';
-    //             }
+                $status = null;
+                if ($now >= $startTs && $now <= $endTs) {
+                    $diffMin = (int)floor(($now->getTimestamp() - $startTs->getTimestamp()) / 60);
+                    $status  = ($diffMin <= $LATE_GRACE_MIN) ? 'Present' : 'Late';
+                } elseif ($ABSENT_IF_AFTER && $now > $endTs) {
+                    $status = 'Absent';
+                }
 
-    //             if ($status) {
-    //                 // Insert only if still no record for today
-    //                 $ins = $conn->prepare("
-    //                     INSERT INTO attendance_records
-    //                         (student_id, subject_id, advisory_id, school_year_id, status, `timestamp`)
-    //                     SELECT ?, ?, ?, ?, ?, NOW()
-    //                     FROM DUAL
-    //                     WHERE NOT EXISTS (
-    //                         SELECT 1
-    //                         FROM attendance_records
-    //                         WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=?
-    //                           AND DATE(`timestamp`) = CURDATE()
-    //                     )
-    //                 ");
-    //                 $ins->bind_param(
-    //                     'iiiisiiii',
-    //                     $studentId, $subjectId, $advisoryId, $syId, $status,
-    //                     $studentId, $subjectId, $advisoryId, $syId
-    //                 );
-    //                 $ins->execute();
-    //                 $ins->close();
-    //             }
-    //         }
-    //     }
-    // }
+                if ($status) {
+                    // Insert only if still no record for today
+                    $ins = $conn->prepare("
+                        INSERT INTO attendance_records
+                            (student_id, subject_id, advisory_id, school_year_id, status, `timestamp`)
+                        SELECT ?, ?, ?, ?, ?, NOW()
+                        FROM DUAL
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM attendance_records
+                            WHERE student_id=? AND subject_id=? AND advisory_id=? AND school_year_id=?
+                              AND DATE(`timestamp`) = CURDATE()
+                        )
+                    ");
+                    $ins->bind_param(
+                        'iiiisiiii',
+                        $studentId, $subjectId, $advisoryId, $syId, $status,
+                        $studentId, $subjectId, $advisoryId, $syId
+                    );
+                    $ins->execute();
+                    $ins->close();
+                }
+            }
+        }
+    }
 
     // Redirect by role
     if (isset($_SESSION['teacher_id'])) {
