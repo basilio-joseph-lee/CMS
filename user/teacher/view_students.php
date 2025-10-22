@@ -23,6 +23,64 @@ ob_start();
   include '../../config/teacher_guard.php';
   include "../../config/db.php";
 
+  // ---------- Avatar arrays (for Edit Avatar modal) ----------
+$maleAvatars = [
+    'https://myschoolness.site//avatar/M-Blue-Polo.png' => '',
+    'https://myschoolness.site//avatar/M-whitepolo-tie.png' => '',
+    'https://myschoolness.site//avatar/2.png' => '',
+    'https://myschoolness.site//avatar/3.png' => '',
+    'https://myschoolness.site//avatar/4.png' => '',
+    'https://myschoolness.site//avatar/5.png' => '',
+    'https://myschoolness.site//avatar/6.png' => '',
+    'https://myschoolness.site//avatar/7.png' => '',
+    'https://myschoolness.site//avatar/8.png' => '',
+    'https://myschoolness.site//avatar/9.png' => '',
+    'https://myschoolness.site//avatar/10.png' => '',
+    'https://myschoolness.site//avatar/11.png' => '',
+    'https://myschoolness.site//avatar/12.png' => '',
+    'https://myschoolness.site//avatar/14.png' => '',
+    'https://myschoolness.site//avatar/15.png' => '',
+    'https://myschoolness.site//avatar/16.png' => '',
+    'https://myschoolness.site//avatar/17.png' => '',
+    'https://myschoolness.site//avatar/18.png' => '',
+    'https://myschoolness.site//avatar/19.png' => '',
+    'https://myschoolness.site//avatar/20.png' => '',
+    'https://myschoolness.site//avatar/21.png' => '',
+    'https://myschoolness.site//avatar/22.png' => '',
+    'https://myschoolness.site//avatar/23.png' => '',
+    'https://myschoolness.site//avatar/24.png' => '',
+    'https://myschoolness.site//avatar/25.png' => '',
+];
+
+$femaleAvatars = [
+    'https://myschoolness.site//avatar/F-Yellow-blowse.png' => '',
+    'https://myschoolness.site//avatar/F-Green-sweater.png' => '',
+    'https://myschoolness.site//avatar/f1.png' => '',
+    'https://myschoolness.site//avatar/f2.png' => '',
+    'https://myschoolness.site//avatar/f3.png' => '',
+    'https://myschoolness.site//avatar/f4.png' => '',
+    'https://myschoolness.site//avatar/f5.png' => '',
+    'https://myschoolness.site//avatar/f6.png' => '',
+    'https://myschoolness.site//avatar/f7.png' => '',
+    'https://myschoolness.site//avatar/f8.png' => '',
+    'https://myschoolness.site//avatar/f9.png' => '',
+    'https://myschoolness.site//avatar/f14.png' => '',
+    'https://myschoolness.site//avatar/f15.png' => '',
+    'https://myschoolness.site//avatar/f16.png' => '',
+    'https://myschoolness.site//avatar/f17.png' => '',
+    'https://myschoolness.site//avatar/f18.png' => '',
+    'https://myschoolness.site//avatar/f19.png' => '',
+    'https://myschoolness.site//avatar/f20.png' => '',
+    'https://myschoolness.site//avatar/f21.png' => '',
+    'https://myschoolness.site//avatar/f22.png' => '',
+    'https://myschoolness.site//avatar/f23.png' => '',
+    'https://myschoolness.site//avatar/f24.png' => '',
+    'https://myschoolness.site//avatar/f25.png' => '',
+    'https://myschoolness.site//avatar/f26.png' => '',
+    'https://myschoolness.site//avatar/f27.png' => '',
+];
+
+
   if ($conn->connect_error) {
       die("Connection failed: " . $conn->connect_error);
   }
@@ -470,6 +528,44 @@ if (!is_dir(dirname($destAbs))) {
   </head>
   <body class="px-6 py-8">
 
+  <!-- Avatar Modal -->
+<div id="avatarModal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/50" onclick="closeAvatarModal()"></div>
+  <div class="absolute inset-x-0 top-4 mx-auto w-[96%] max-w-5xl bg-white rounded-2xl shadow-xl h-[85vh] flex flex-col overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-3 border-b">
+      <h3 class="text-lg font-bold text-gray-800">Assign 2D Character</h3>
+      <button onclick="closeAvatarModal()">✕</button>
+    </div>
+    <div class="flex gap-3 border-b px-4 pt-2">
+      <button class="tab-btn" data-target="#maleTab" data-active="true">Male</button>
+      <button class="tab-btn" data-target="#femaleTab">Female</button>
+    </div>
+    <div class="grow overflow-y-auto px-4 py-4">
+      <div id="maleTab" class="tab-panel block grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <?php foreach($maleAvatars as $path=>$label): ?>
+        <button type="button" class="avatar-card" data-avatar="<?= htmlspecialchars($path) ?>" onclick="chooseAvatar('<?= htmlspecialchars($path) ?>', this)">
+          <img src="<?= htmlspecialchars($path) ?>" class="w-20 h-20 mx-auto mb-1">
+          <div class="text-xs"><?= htmlspecialchars($label) ?></div>
+        </button>
+        <?php endforeach; ?>
+      </div>
+      <div id="femaleTab" class="tab-panel hidden grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <?php foreach($femaleAvatars as $path=>$label): ?>
+        <button type="button" class="avatar-card" data-avatar="<?= htmlspecialchars($path) ?>" onclick="chooseAvatar('<?= htmlspecialchars($path) ?>', this)">
+          <img src="<?= htmlspecialchars($path) ?>" class="w-20 h-20 mx-auto mb-1">
+          <div class="text-xs"><?= htmlspecialchars($label) ?></div>
+        </button>
+        <?php endforeach; ?>
+      </div>
+    </div>
+    <div class="px-4 py-3 border-t flex justify-end gap-2">
+      <button onclick="closeAvatarModal()">Close</button>
+      <button onclick="closeAvatarModal()" class="bg-indigo-600 text-white px-3 py-1 rounded">Done</button>
+    </div>
+  </div>
+</div>
+
+
   <?php if (isset($_SESSION['toast'])): ?>
     <div id="toast" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 px-6 py-3 rounded-lg shadow-lg transition-opacity duration-500
     <?= $_SESSION['toast_type'] === 'success' ? 'bg-green-500' : 'bg-red-500' ?> text-white font-semibold text-center">
@@ -906,6 +1002,51 @@ function chooseAvatar(path, btnEl){
         }
     }
 }
+
+let lastSelectedCard = null;
+let lastEditAvatarStudentId = null;
+
+function openEditAvatarModal(studentId){
+    lastEditAvatarStudentId = studentId;
+    const preview = document.getElementById('edit_avatar_preview_' + studentId);
+    const hidden  = document.getElementById('edit_avatar_path_' + studentId);
+    if(preview && hidden){
+        document.getElementById('avatarPreview').src = preview.src;
+        document.getElementById('avatar_path').value = hidden.value;
+    }
+    openAvatarModal();
+}
+
+function openAvatarModal(){document.getElementById('avatarModal').classList.remove('hidden');}
+function closeAvatarModal(){document.getElementById('avatarModal').classList.add('hidden');}
+
+function chooseAvatar(path, btnEl){
+    document.getElementById('avatarPreview').src = path;
+    document.getElementById('avatar_path').value = path;
+
+    if(lastSelectedCard) lastSelectedCard.classList.remove('active');
+    if(btnEl){btnEl.classList.add('active'); lastSelectedCard = btnEl;}
+
+    if(lastEditAvatarStudentId !== null){
+        const preview = document.getElementById('edit_avatar_preview_' + lastEditAvatarStudentId);
+        const hidden  = document.getElementById('edit_avatar_path_' + lastEditAvatarStudentId);
+        if(preview && hidden){preview.src = path; hidden.value = path;}
+    }
+}
+
+// Tab switching
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+        document.querySelectorAll('.tab-btn').forEach(b=>b.dataset.active='false');
+        btn.dataset.active='true';
+        const target = btn.getAttribute('data-target');
+        document.querySelectorAll('.tab-panel').forEach(p=>{
+            if('#'+p.id === target){p.classList.remove('hidden'); p.classList.add('block');}
+            else{p.classList.add('hidden'); p.classList.remove('block');}
+        });
+    });
+});
+
 
   </script>
 
