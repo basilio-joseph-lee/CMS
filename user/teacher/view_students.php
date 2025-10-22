@@ -968,7 +968,7 @@ function loadAdvisories(subjectId) {
       };
     })();
 
-    let lastEditAvatarStudentId = null;
+
 
 function openEditAvatarModal(studentId){
     lastEditAvatarStudentId = studentId;
@@ -1003,19 +1003,19 @@ function chooseAvatar(path, btnEl){
     }
 }
 
-let lastSelectedCard = null;
+
 let lastEditAvatarStudentId = null;
 
-function openEditAvatarModal(studentId){
-    lastEditAvatarStudentId = studentId;
-    const preview = document.getElementById('edit_avatar_preview_' + studentId);
-    const hidden  = document.getElementById('edit_avatar_path_' + studentId);
-    if(preview && hidden){
-        document.getElementById('avatarPreview').src = preview.src;
-        document.getElementById('avatar_path').value = hidden.value;
-    }
-    openAvatarModal();
-}
+// function openEditAvatarModal(studentId){
+//     lastEditAvatarStudentId = studentId;
+//     const preview = document.getElementById('edit_avatar_preview_' + studentId);
+//     const hidden  = document.getElementById('edit_avatar_path_' + studentId);
+//     if(preview && hidden){
+//         document.getElementById('avatarPreview').src = preview.src;
+//         document.getElementById('avatar_path').value = hidden.value;
+//     }
+//     openAvatarModal();
+// }
 
 function openAvatarModal(){document.getElementById('avatarModal').classList.remove('hidden');}
 function closeAvatarModal(){document.getElementById('avatarModal').classList.add('hidden');}
