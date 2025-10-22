@@ -652,10 +652,12 @@ if (!is_dir(dirname($destAbs))) {
             <td class="px-4 py-3 border name-cell"><?= htmlspecialchars($student['fullname']) ?></td>
             <td class="px-4 py-3 border"><?= $student['gender'] ?></td>
             <td class="px-4 py-3 border">
-              <button onclick="openEditModal(<?= $student['student_id'] ?>)" class="text-blue-600 text-sm hover:underline mr-2">✏️ Edit</button>
-              <button onclick="openDeleteModal(<?= $student['student_id'] ?>)" class="text-red-600 text-sm hover:underline mr-2">🗑️ Delete</button>
-              <button onclick="openRetakeModal(<?= $student['student_id'] ?>, '<?= addslashes(htmlspecialchars($student['fullname'])) ?>')" class="text-green-700 text-sm hover:underline">📸 Retake</button>
-            </td>
+  <button onclick="openEditModal(<?= $student['student_id'] ?>)" class="text-blue-600 text-sm hover:underline mr-2">✏️ Edit</button>
+  <button onclick="openDeleteModal(<?= $student['student_id'] ?>)" class="text-red-600 text-sm hover:underline mr-2">🗑️ Delete</button>
+  <button onclick="openRetakeModal(<?= $student['student_id'] ?>, '<?= addslashes(htmlspecialchars($student['fullname'])) ?>')" class="text-green-700 text-sm hover:underline mr-2">📸 Retake</button>
+  <button onclick="openEditAvatarModal(<?= $student['student_id'] ?>)" class="text-purple-700 text-sm hover:underline">🖼️ Choose Avatar</button>
+</td>
+
           </tr>
         <?php endforeach; ?>
       </tbody>
