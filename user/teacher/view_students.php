@@ -978,7 +978,7 @@ function loadAdvisories(subjectId) {
   });
 
 
-}
+
 
 
             // show success small toast
