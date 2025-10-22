@@ -645,12 +645,15 @@ if (!is_dir(dirname($destAbs))) {
     $avatarToShow = '';
     if (!empty($student['face_image_path'])) {
         // Face image has priority
-        $avatarToShow = '../' . $student['face_image_path'];
+        $avatarToShow = $student['face_image_path'];
+        // prepend '../' only if relative path (does NOT start with http or /)
+        if (strpos($avatarToShow, 'http') !== 0 && strpos($avatarToShow, '/') !== 0) {
+            $avatarToShow = '../' . $avatarToShow;
+        }
     } elseif (!empty($student['avatar_path'])) {
-        // Use avatar path directly, even if it's a URL
         $avatarToShow = $student['avatar_path'];
-        // Add relative path prefix if it's a local file (optional)
-        if (strpos($avatarToShow, 'http') !== 0) {
+        // prepend '../' only if relative path (does NOT start with http or /)
+        if (strpos($avatarToShow, 'http') !== 0 && strpos($avatarToShow, '/') !== 0) {
             $avatarToShow = '../' . $avatarToShow;
         }
     }
@@ -661,6 +664,7 @@ if (!is_dir(dirname($destAbs))) {
     <div class="w-10 h-10 bg-yellow-300 rounded-full flex items-center justify-center text-lg">👤</div>
   <?php endif; ?>
 </td>
+
 
             <td class="px-4 py-3 border name-cell"><?= htmlspecialchars($student['fullname']) ?></td>
             <td class="px-4 py-3 border"><?= $student['gender'] ?></td>
