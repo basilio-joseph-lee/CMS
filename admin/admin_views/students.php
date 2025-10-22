@@ -385,7 +385,7 @@ $initialRows = fetch_enrollments($conn, $flt_section_id, $flt_subject_name, $flt
   <div class="flex gap-2">
     <button onclick="openFileImportModal()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg shadow font-medium">📂 Import File</button>
 
-    <button onclick="openImportModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow font-medium">⬇️ Import</button>
+    <!-- <button onclick="openImportModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow font-medium">⬇️ Import</button> -->
     <a id="btnAddStudent"
        href="admin.php?page=add_student_admin"
        class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow">
