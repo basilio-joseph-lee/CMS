@@ -640,15 +640,28 @@ if (!is_dir(dirname($destAbs))) {
         <?php $i = 1; foreach ($students as $student): ?>
           <tr class="border-b" data-student-id="<?= intval($student['student_id']) ?>">
             <td class="px-4 py-3 border"><?= $i++ ?></td>
-            <td class="px-4 py-3 border">
-              <?php if (!empty($student['face_image_path']) && file_exists(__DIR__ . '/../' . $student['face_image_path'])): ?>
-                <img src="../<?= $student['face_image_path'] ?>" alt="Face" class="w-10 h-10 rounded-full object-cover">
-              <?php elseif (!empty($student['avatar_path']) && file_exists(__DIR__ . '/../' . $student['avatar_path'])): ?>
-                <img src="../<?= $student['avatar_path'] ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
-              <?php else: ?>
-                <div class="w-10 h-10 bg-yellow-300 rounded-full flex items-center justify-center text-lg">👤</div>
-              <?php endif; ?>
-            </td>
+<td class="px-4 py-3 border">
+  <?php
+    $avatarToShow = '';
+    if (!empty($student['face_image_path'])) {
+        // Face image has priority
+        $avatarToShow = '../' . $student['face_image_path'];
+    } elseif (!empty($student['avatar_path'])) {
+        // Use avatar path directly, even if it's a URL
+        $avatarToShow = $student['avatar_path'];
+        // Add relative path prefix if it's a local file (optional)
+        if (strpos($avatarToShow, 'http') !== 0) {
+            $avatarToShow = '../' . $avatarToShow;
+        }
+    }
+  ?>
+  <?php if ($avatarToShow): ?>
+    <img src="<?= htmlspecialchars($avatarToShow) ?>" alt="Avatar" class="w-10 h-10 rounded-full object-cover">
+  <?php else: ?>
+    <div class="w-10 h-10 bg-yellow-300 rounded-full flex items-center justify-center text-lg">👤</div>
+  <?php endif; ?>
+</td>
+
             <td class="px-4 py-3 border name-cell"><?= htmlspecialchars($student['fullname']) ?></td>
             <td class="px-4 py-3 border"><?= $student['gender'] ?></td>
             <td class="px-4 py-3 border">
