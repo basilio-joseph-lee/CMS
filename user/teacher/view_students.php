@@ -532,14 +532,25 @@ if (!is_dir(dirname($destAbs))) {
 <div id="avatarModal" class="fixed inset-0 z-50 hidden">
   <div class="absolute inset-0 bg-black/50" onclick="closeAvatarModal()"></div>
   <div class="absolute inset-x-0 top-4 mx-auto w-[96%] max-w-5xl bg-white rounded-2xl shadow-xl h-[85vh] flex flex-col overflow-hidden">
+    
     <div class="flex items-center justify-between px-4 py-3 border-b">
       <h3 class="text-lg font-bold text-gray-800">Assign 2D Character</h3>
       <button onclick="closeAvatarModal()">✕</button>
     </div>
+    
+    <!-- Preview + hidden input -->
+    <div class="text-center px-4 py-2">
+      <img id="avatarPreview" src="../../img/default.png" class="w-24 h-24 mx-auto rounded mb-2">
+      <input type="hidden" id="avatar_path" value="">
+    </div>
+
+    <!-- Tabs -->
     <div class="flex gap-3 border-b px-4 pt-2">
       <button class="tab-btn" data-target="#maleTab" data-active="true">Male</button>
       <button class="tab-btn" data-target="#femaleTab">Female</button>
     </div>
+
+    <!-- Avatar grids -->
     <div class="grow overflow-y-auto px-4 py-4">
       <div id="maleTab" class="tab-panel block grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         <?php foreach($maleAvatars as $path=>$label): ?>
@@ -549,6 +560,7 @@ if (!is_dir(dirname($destAbs))) {
         </button>
         <?php endforeach; ?>
       </div>
+
       <div id="femaleTab" class="tab-panel hidden grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
         <?php foreach($femaleAvatars as $path=>$label): ?>
         <button type="button" class="avatar-card" data-avatar="<?= htmlspecialchars($path) ?>" onclick="chooseAvatar('<?= htmlspecialchars($path) ?>', this)">
@@ -558,12 +570,14 @@ if (!is_dir(dirname($destAbs))) {
         <?php endforeach; ?>
       </div>
     </div>
+
     <div class="px-4 py-3 border-t flex justify-end gap-2">
       <button onclick="closeAvatarModal()">Close</button>
       <button onclick="closeAvatarModal()" class="bg-indigo-600 text-white px-3 py-1 rounded">Done</button>
     </div>
   </div>
 </div>
+
 
 
   <?php if (isset($_SESSION['toast'])): ?>
@@ -982,29 +996,10 @@ function openEditAvatarModal(studentId){
     openAvatarModal(); // reuse your Add Student modal
 }
 
-function chooseAvatar(path, btnEl){
-    document.getElementById('avatarPreview').src = path;
-    document.getElementById('avatar_path').value = path;
-
-    if(lastSelectedCard) lastSelectedCard.classList.remove('active');
-    if(btnEl){
-        btnEl.classList.add('active');
-        lastSelectedCard = btnEl;
-    }
-
-    // if editing, copy back to hidden + preview
-    if(typeof lastEditAvatarStudentId !== 'undefined' && lastEditAvatarStudentId !== null){
-        const preview = document.getElementById('edit_avatar_preview_' + lastEditAvatarStudentId);
-        const hidden  = document.getElementById('edit_avatar_path_' + lastEditAvatarStudentId);
-        if(preview && hidden){
-            preview.src = path;
-            hidden.value = path;
-        }
-    }
-}
 
 
 let lastEditAvatarStudentId = null;
+let lastSelectedCard = null;
 
 // function openEditAvatarModal(studentId){
 //     lastEditAvatarStudentId = studentId;
