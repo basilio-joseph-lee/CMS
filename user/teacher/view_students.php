@@ -1027,7 +1027,29 @@ function chooseAvatar(path, btnEl){
     if(lastEditAvatarStudentId !== null){
         const preview = document.getElementById('edit_avatar_preview_' + lastEditAvatarStudentId);
         const hidden  = document.getElementById('edit_avatar_path_' + lastEditAvatarStudentId);
-        if(preview && hidden){preview.src = path; hidden.value = path;}
+        if(preview && hidden){
+            preview.src = path;
+            hidden.value = path;
+
+            // ------------------ NEW: AJAX update ------------------
+            const formData = new FormData();
+            formData.append('edit_student', 1);
+            formData.append('student_id', lastEditAvatarStudentId);
+            formData.append('fullname', document.querySelector('#editModal' + lastEditAvatarStudentId + ' input[name="fullname"]').value);
+            formData.append('gender', document.querySelector('#editModal' + lastEditAvatarStudentId + ' select[name="gender"]').value);
+            formData.append('avatar_path', path);
+
+            fetch('view_students.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.text())
+            .then(resp => {
+                console.log('Avatar saved for student', lastEditAvatarStudentId);
+            })
+            .catch(err => console.error('Failed to save avatar:', err));
+            // ------------------------------------------------------
+        }
     }
 }
 
