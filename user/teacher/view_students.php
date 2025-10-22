@@ -958,25 +958,27 @@ function loadAdvisories(subjectId) {
           const json = await resp.json();
           if (json.status === 'success') {
             // update row image preview in table if present
-            const rows = document.querySelectorAll('#studentsTable tbody tr');
-// new: after retake, avatar column stays showing avatar_path
-rows.forEach(r => {
-  if (r.getAttribute('data-student-id') == studentId) {
-    const imgCell = r.querySelector('td:nth-child(2)');
-    if (imgCell) {
-      // get the current avatar_path from hidden input
-      const hiddenAvatar = document.getElementById('edit_avatar_path_' + studentId);
-      const avatarSrc = hiddenAvatar ? hiddenAvatar.value : '../../img/default.png';
+  const rows = document.querySelectorAll('#studentsTable tbody tr');
+  rows.forEach(r => {
+    if (r.getAttribute('data-student-id') == studentId) {
+      const imgCell = r.querySelector('td:nth-child(2)');
+      if (imgCell) {
+        // get current avatar_path from hidden input
+        const hiddenAvatar = document.getElementById('edit_avatar_path_' + studentId);
+        const avatarSrc = hiddenAvatar ? hiddenAvatar.value : '../../img/default.png';
 
-      const img = document.createElement('img');
-      img.src = avatarSrc.startsWith('http') || avatarSrc.startsWith('/') ? avatarSrc : '../' + avatarSrc;
-      img.className = 'w-10 h-10 rounded-full object-cover';
-      img.alt = 'Avatar';
-      imgCell.innerHTML = '';
-      imgCell.appendChild(img);
+        const img = document.createElement('img');
+        img.src = avatarSrc.startsWith('http') || avatarSrc.startsWith('/') ? avatarSrc : '../' + avatarSrc;
+        img.className = 'w-10 h-10 rounded-full object-cover';
+        img.alt = 'Avatar';
+        imgCell.innerHTML = '';
+        imgCell.appendChild(img);
+      }
     }
-  }
-});
+  });
+
+
+}
 
 
             // show success small toast
