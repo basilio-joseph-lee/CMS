@@ -85,8 +85,10 @@ ob_start();
     $id = $_POST['student_id'];
     $name = $_POST['fullname'];
     $gender = $_POST['gender'];
-    $stmt = $conn->prepare("UPDATE students SET fullname = ?, gender = ? WHERE student_id = ?");
-    $stmt->bind_param("ssi", $name, $gender, $id);
+$avatar_path = $_POST['avatar_path'] ?? '';
+$stmt = $conn->prepare("UPDATE students SET fullname = ?, gender = ?, avatar_path = ? WHERE student_id = ?");
+$stmt->bind_param("sssi", $name, $gender, $avatar_path, $id);
+
     $stmt->execute();
     $_SESSION['toast'] = "Student updated successfully!";
     $_SESSION['toast_type'] = "success";
@@ -564,10 +566,21 @@ if (!is_dir(dirname($destAbs))) {
           <option value="Male" <?= $student['gender'] === 'Male' ? 'selected' : '' ?>>Male</option>
           <option value="Female" <?= $student['gender'] === 'Female' ? 'selected' : '' ?>>Female</option>
         </select>
-        <div class="flex justify-end gap-2 pt-4">
-          <button type="button" onclick="closeModal('editModal<?= $student['student_id'] ?>')" class="text-gray-600">Cancel</button>
-          <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">Update</button>
-        </div>
+        
+<!-- Avatar Preview + Choose Avatar -->
+<div class="mb-3 text-center">
+  <img id="edit_avatar_preview_<?= $student['student_id'] ?>"
+       src="<?= !empty($student['avatar_path']) ? '../' . htmlspecialchars($student['avatar_path']) : '../../img/default.png' ?>"
+       class="w-20 h-20 mx-auto rounded mb-2">
+  <input type="hidden" id="edit_avatar_path_<?= $student['student_id'] ?>" name="avatar_path"
+         value="<?= htmlspecialchars($student['avatar_path']) ?>">
+  <button type="button"
+          onclick="openEditAvatarModal(<?= $student['student_id'] ?>)"
+          class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold">
+    Choose Avatar
+  </button>
+</div>
+
       </form>
     </div>
 
@@ -858,6 +871,42 @@ function loadAdvisories(subjectId) {
         }
       };
     })();
+
+    let lastEditAvatarStudentId = null;
+
+function openEditAvatarModal(studentId){
+    lastEditAvatarStudentId = studentId;
+    const preview = document.getElementById('edit_avatar_preview_' + studentId);
+    const hidden  = document.getElementById('edit_avatar_path_' + studentId);
+    if(preview && hidden){
+        // set preview in global avatar modal
+        document.getElementById('avatarPreview').src = preview.src;
+        document.getElementById('avatar_path').value = hidden.value;
+    }
+    openAvatarModal(); // reuse your Add Student modal
+}
+
+function chooseAvatar(path, btnEl){
+    document.getElementById('avatarPreview').src = path;
+    document.getElementById('avatar_path').value = path;
+
+    if(lastSelectedCard) lastSelectedCard.classList.remove('active');
+    if(btnEl){
+        btnEl.classList.add('active');
+        lastSelectedCard = btnEl;
+    }
+
+    // if editing, copy back to hidden + preview
+    if(typeof lastEditAvatarStudentId !== 'undefined' && lastEditAvatarStudentId !== null){
+        const preview = document.getElementById('edit_avatar_preview_' + lastEditAvatarStudentId);
+        const hidden  = document.getElementById('edit_avatar_path_' + lastEditAvatarStudentId);
+        if(preview && hidden){
+            preview.src = path;
+            hidden.value = path;
+        }
+    }
+}
+
   </script>
 
   <!-- face-api for descriptor computation -->
