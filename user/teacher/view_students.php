@@ -723,22 +723,35 @@ if (!is_dir(dirname($destAbs))) {
   <!-- Edit & Delete modals (existing) -->
   <?php foreach ($students as $student): ?>
     <div id="editModal<?= $student['student_id'] ?>" class="fixed inset-0 z-50 hidden bg-black bg-opacity-50 flex justify-center items-center">
-      <form method="POST" class="bg-white p-6 rounded-lg shadow-lg w-96 space-y-4">
-        <input type="hidden" name="student_id" value="<?= $student['student_id'] ?>">
-        <input type="hidden" name="edit_student" value="1">
-        <h2 class="text-lg font-bold">Edit Student</h2>
-        <label class="block text-sm font-semibold">Full Name</label>
-        <input type="text" name="fullname" value="<?= htmlspecialchars($student['fullname']) ?>" class="w-full border rounded px-3 py-2">
-        <label class="block text-sm font-semibold">Gender</label>
-        <select name="gender" class="w-full border rounded px-3 py-2">
-          <option value="Male" <?= $student['gender'] === 'Male' ? 'selected' : '' ?>>Male</option>
-          <option value="Female" <?= $student['gender'] === 'Female' ? 'selected' : '' ?>>Female</option>
-        </select>
-        
-<!-- Avatar Preview + Choose Avatar -->
+<form method="POST" class="bg-white p-6 rounded-lg shadow-lg w-96 space-y-4">
+  <input type="hidden" name="student_id" value="<?= $student['student_id'] ?>">
+  <input type="hidden" name="edit_student" value="1">
+  <h2 class="text-lg font-bold">Edit Student</h2>
 
+  <label class="block text-sm font-semibold">Full Name</label>
+  <input type="text" name="fullname" value="<?= htmlspecialchars($student['fullname']) ?>" class="w-full border rounded px-3 py-2">
 
-      </form>
+  <label class="block text-sm font-semibold">Gender</label>
+  <select name="gender" class="w-full border rounded px-3 py-2">
+    <option value="Male" <?= $student['gender'] === 'Male' ? 'selected' : '' ?>>Male</option>
+    <option value="Female" <?= $student['gender'] === 'Female' ? 'selected' : '' ?>>Female</option>
+  </select>
+
+  <input type="hidden" id="edit_avatar_path_<?= $student['student_id'] ?>" name="avatar_path"
+         value="<?= htmlspecialchars($student['avatar_path']) ?>">
+
+  <!-- Action buttons -->
+  <div class="flex justify-end gap-2 pt-3">
+    <button type="button" onclick="closeModal('editModal<?= $student['student_id'] ?>')" 
+            class="bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded font-semibold">
+      Cancel
+    </button>
+    <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-semibold">
+      Save
+    </button>
+  </div>
+</form>
+
     </div>
 
     <div id="deleteModal<?= $student['student_id'] ?>" class="fixed inset-0 z-50 hidden bg-black bg-opacity-50 flex justify-center items-center">
