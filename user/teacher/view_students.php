@@ -157,16 +157,61 @@ $stmt->bind_param("sssi", $name, $gender, $avatar_path, $id);
   /**
    * Handle delete
    */
-  if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
-    $id = $_POST['student_id'];
-    $stmt = $conn->prepare("DELETE FROM students WHERE student_id = ?");
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $_SESSION['toast'] = "Student deleted successfully!";
-    $_SESSION['toast_type'] = "error";
+/**
+ * Handle delete (remove enrollment from current section only)
+ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
+    $id = intval($_POST['student_id'] ?? 0);
+
+    // Use current selection from session (falls back to 0 if not set)
+    $subject_id    = intval($_SESSION['subject_id']    ?? 0);
+    $advisory_id   = intval($_SESSION['advisory_id']   ?? 0);
+    $school_year_id= intval($_SESSION['school_year_id']?? 0);
+
+    // Safety check
+    if ($id <= 0 || $subject_id <= 0 || $advisory_id <= 0 || $school_year_id <= 0) {
+        $_SESSION['toast'] = "Delete failed: missing context (subject/section/sy).";
+        $_SESSION['toast_type'] = "error";
+        header("Location: view_students.php");
+        exit;
+    }
+
+    // Delete only the student_enrollments row for this student + current section
+    $stmt = $conn->prepare("
+        DELETE FROM student_enrollments
+        WHERE student_id = ? AND subject_id = ? AND advisory_id = ? AND school_year_id = ?
+        LIMIT 1
+    ");
+    if (!$stmt) {
+        $_SESSION['toast'] = "Delete failed: DB prepare error.";
+        $_SESSION['toast_type'] = "error";
+        header("Location: view_students.php");
+        exit;
+    }
+
+    $stmt->bind_param("iiii", $id, $subject_id, $advisory_id, $school_year_id);
+    if (!$stmt->execute()) {
+        $_SESSION['toast'] = "Delete failed: DB error.";
+        $_SESSION['toast_type'] = "error";
+        $stmt->close();
+        header("Location: view_students.php");
+        exit;
+    }
+
+    // Check if we actually removed an enrollment row
+    if ($stmt->affected_rows > 0) {
+        $_SESSION['toast'] = "Student removed from this section.";
+        $_SESSION['toast_type'] = "success";
+    } else {
+        $_SESSION['toast'] = "No matching enrollment found for deletion.";
+        $_SESSION['toast_type'] = "error";
+    }
+
+    $stmt->close();
     header("Location: view_students.php");
     exit;
-  }
+}
+
 
   /**
    * Import handling (kept same as previous, requiring source_subject_id + source_advisory_id)
