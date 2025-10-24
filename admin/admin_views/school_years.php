@@ -40,6 +40,15 @@ $result = $conn->query("SELECT * FROM school_years ORDER BY school_year_id DESC"
   <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700">
     Add School Year
   </button>
+
+  <!-- Search box added (keeps styling consistent) -->
+  <div class="ml-auto w-1/3">
+    <label class="block text-sm text-gray-600 mb-1">Search (ID, Year, Status)</label>
+    <div class="flex gap-2">
+      <input id="sy_search" type="search" placeholder="Search by ID, year label, or status..." class="w-full p-2 border rounded" oninput="debouncedFilter()">
+      <button type="button" onclick="clearSearch()" class="px-3 py-2 border rounded text-sm text-gray-600">Clear</button>
+    </div>
+  </div>
 </form>
 
 <!-- Table -->
@@ -52,19 +61,26 @@ $result = $conn->query("SELECT * FROM school_years ORDER BY school_year_id DESC"
       <th class="px-4 py-2">Action</th>
     </tr>
   </thead>
-  <tbody>
-    <?php while ($row = $result->fetch_assoc()) { ?>
-      <tr class="border-t">
-        <td class="px-4 py-2"><?= $row['school_year_id'] ?></td>
-        <td class="px-4 py-2"><?= htmlspecialchars($row['year_label']) ?></td>
+  <tbody id="school_years_tbody">
+    <?php while ($row = $result->fetch_assoc()) { 
+        $id = (int)$row['school_year_id'];
+        $label = htmlspecialchars($row['year_label']);
+        $status = htmlspecialchars($row['status']);
+    ?>
+      <tr class="border-t sy-row"
+          data-id="<?= $id ?>"
+          data-label="<?= strtolower($label) ?>"
+          data-status="<?= strtolower($status) ?>">
+        <td class="px-4 py-2"><?= $id ?></td>
+        <td class="px-4 py-2"><?= $label ?></td>
         <td class="px-4 py-2">
           <span class="<?= $row['status'] === 'active' ? 'text-green-600 font-semibold' : 'text-gray-500' ?>">
-            <?= ucfirst($row['status']) ?>
+            <?= ucfirst($status) ?>
           </span>
         </td>
         <td class="px-4 py-2">
           <?php if ($row['status'] !== 'active') { ?>
-            <a href="admin.php?page=school_years&activate_id=<?= $row['school_year_id'] ?>"
+            <a href="admin.php?page=school_years&activate_id=<?= $id ?>"
                class="text-blue-600 hover:underline">Activate</a>
           <?php } else { ?>
             <span class="text-gray-400">Active</span>
@@ -74,3 +90,61 @@ $result = $conn->query("SELECT * FROM school_years ORDER BY school_year_id DESC"
     <?php } ?>
   </tbody>
 </table>
+
+<script>
+  // Realtime search for School Years (searches ID, year label, and status)
+  const sySearch = document.getElementById('sy_search');
+  const syTbody = document.getElementById('school_years_tbody');
+
+  function clearSearch() {
+    sySearch.value = '';
+    filterSYRows();
+    sySearch.focus();
+  }
+
+  function filterSYRows() {
+    const q = (sySearch.value || '').trim().toLowerCase();
+    const rows = syTbody.querySelectorAll('.sy-row');
+    let anyVisible = false;
+
+    rows.forEach(row => {
+      const id = String(row.getAttribute('data-id') || '').toLowerCase();
+      const label = String(row.getAttribute('data-label') || '').toLowerCase();
+      const status = String(row.getAttribute('data-status') || '').toLowerCase();
+
+      const visible = q === '' ||
+                      id.indexOf(q) !== -1 ||
+                      label.indexOf(q) !== -1 ||
+                      status.indexOf(q) !== -1;
+
+      row.style.display = visible ? '' : 'none';
+      if (visible) anyVisible = true;
+    });
+
+    // show a "no results" row when nothing matches
+    let noRow = document.getElementById('no_results_row_sy');
+    if (!anyVisible) {
+      if (!noRow) {
+        noRow = document.createElement('tr');
+        noRow.id = 'no_results_row_sy';
+        noRow.innerHTML = '<td class="py-6 px-3 text-center text-gray-500 italic" colspan="4">No school years found.</td>';
+        syTbody.appendChild(noRow);
+      }
+    } else {
+      if (noRow) noRow.remove();
+    }
+  }
+
+  // Debounce helper to avoid running filter on every keystroke
+  let syDebounceTimer = null;
+  function debouncedFilter(delay = 250) {
+    if (syDebounceTimer) clearTimeout(syDebounceTimer);
+    syDebounceTimer = setTimeout(() => {
+      filterSYRows();
+      syDebounceTimer = null;
+    }, delay);
+  }
+
+  // initial run (in case there's pre-filled search from older logic)
+  filterSYRows();
+</script>
