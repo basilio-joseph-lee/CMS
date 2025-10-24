@@ -736,18 +736,7 @@ if (!is_dir(dirname($destAbs))) {
         </select>
         
 <!-- Avatar Preview + Choose Avatar -->
-<div class="mb-3 text-center">
-  <img id="edit_avatar_preview_<?= $student['student_id'] ?>"
-       src="<?= !empty($student['avatar_path']) ? '../' . htmlspecialchars($student['avatar_path']) : '../../img/default.png' ?>"
-       class="w-20 h-20 mx-auto rounded mb-2">
-  <input type="hidden" id="edit_avatar_path_<?= $student['student_id'] ?>" name="avatar_path"
-         value="<?= htmlspecialchars($student['avatar_path']) ?>">
-  <button type="button"
-          onclick="openEditAvatarModal(<?= $student['student_id'] ?>)"
-          class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold">
-    Choose Avatar
-  </button>
-</div>
+
 
       </form>
     </div>
