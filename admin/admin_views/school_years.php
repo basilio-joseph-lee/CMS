@@ -43,9 +43,9 @@ $result = $conn->query("SELECT * FROM school_years ORDER BY school_year_id DESC"
 
   <!-- Search box added (keeps styling consistent) -->
   <div class="ml-auto w-1/3">
-    <label class="block text-sm text-gray-600 mb-1">Search (ID, Year, Status)</label>
+    <label class="block text-sm text-gray-600 mb-1">Search (Year)</label>
     <div class="flex gap-2">
-      <input id="sy_search" type="search" placeholder="Search by ID, year label, or status..." class="w-full p-2 border rounded" oninput="debouncedFilter()">
+      <input id="sy_search" type="search" placeholder="Search by year label..." class="w-full p-2 border rounded" oninput="debouncedFilter()">
       <button type="button" onclick="clearSearch()" class="px-3 py-2 border rounded text-sm text-gray-600">Clear</button>
     </div>
   </div>
